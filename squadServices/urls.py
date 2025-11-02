@@ -48,7 +48,6 @@ urlpatterns = [
             }
         ),
     ),
-    
     path(
         "navUserRelation/createLabel/",
         NavUserRelationViewSet.as_view({"post": "createSidebar"}),  
