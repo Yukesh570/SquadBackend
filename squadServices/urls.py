@@ -18,6 +18,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import path
 
+from squadServices.controller.campaignController import CampaignContactBulkCreateAPIView
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
@@ -29,6 +30,14 @@ from squadServices.controller.views import NavItemViewSet, NavUserRelationViewSe
 
 urlpatterns = [
     path("hello/", hello, name="hello"),
+
+    path("register/", RegisterView.as_view(), name="register"),
+    path("login/", LoginView.as_view(), name="login"),
+    path("user/edit/<int:pk>/", EditUserView.as_view(), name="edit-user"),
+    path("changePassword/", ChangePasswordView.as_view(), name="changePassword"),
+
+
+
     path(
         "navItem/",
         NavItemViewSet.as_view(
@@ -65,10 +74,17 @@ urlpatterns = [
         "navUserRelation/bulk-update/",
         NavUserRelationViewSet.as_view({"patch": "bulk_partial_update"}),
     ),
-    path("register/", RegisterView.as_view(), name="register"),
-    path("login/", LoginView.as_view(), name="login"),
-    path("user/edit/<int:pk>/", EditUserView.as_view(), name="edit-user"),
-    path("changePassword/", ChangePasswordView.as_view(), name="changePassword"),
+    
+
+
+    path(
+        'campaignContact/bulk-create/',
+        CampaignContactBulkCreateAPIView.as_view(),
+        name='campaignContact-bulk-create',
+    )
+
+
+
 ]
 
 
