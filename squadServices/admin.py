@@ -14,7 +14,7 @@ class CustomUserAdmin(UserAdmin):
     add_fieldsets = UserAdmin.add_fieldsets + (
         (None, {"fields": ("phone", "userType")}),
     )
-    list_display = UserAdmin.list_display + ("phone", "userType")
+    list_display = ("id","phone", "userType") + UserAdmin.list_display 
     search_fields = UserAdmin.search_fields + ("phone", "userType")
 
 
@@ -24,7 +24,7 @@ class NavItemAdmin(admin.ModelAdmin):
     ordering = ["order"]
 class NavUserRelationAdmin(admin.ModelAdmin):
     model = NavUserRelation
-    list_display = ("userType", "navigateId", "read", "write", "delete", "put")
+    list_display = ("id","userType", "navigateId", "read", "write", "delete", "put")
     search_fields = ("userType", "navigateId__label")
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)

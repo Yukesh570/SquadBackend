@@ -11,6 +11,7 @@ from squadServices.serializer.navSerializer import (
     NavUserRelationSerializer,
 )
 from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action
 
 
 def hello(request):
@@ -104,3 +105,29 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
         relations = NavUserRelation.objects.filter(userType=userType)
         serializer = self.get_serializer(relations, many=True)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=["patch"], url_path="bulk-update")
+    def bulk_partial_update(self, request, *args, **kwargs):
+        data = request.data
+        if not isinstance(data, list):
+            return Response({"error": "Expected a list of objects."}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_items = []
+        for item in data:
+            obj_id = item.get("id")
+            if not obj_id:
+                continue 
+
+            try:
+                instance = NavUserRelation.objects.get(id=obj_id)
+            except NavUserRelation.DoesNotExist:
+                continue
+
+            serializer = self.get_serializer(instance, data=item, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                updated_items.append(serializer.data)
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"updated": updated_items}, status=status.HTTP_200_OK)
