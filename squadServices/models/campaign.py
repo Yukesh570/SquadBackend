@@ -8,13 +8,13 @@ class objectiveType(models.TextChoices):
     Re_engagement = "Re_engagement"
  
 class Template(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100,unique=True)
     content = models.TextField()
 
     def __str__(self):
         return self.name
 class Campaign(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100,unique=True)
     objective = models.CharField(max_length=20, choices=objectiveType.choices)
     content=models.TextField(null=True, blank=True)
     template = models.ForeignKey(Template, on_delete=models.SET_NULL, null=True, blank=True)
