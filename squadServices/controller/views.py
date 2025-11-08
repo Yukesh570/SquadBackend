@@ -80,7 +80,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
             NavUserRelation(
                 userType=value,
                 navigateId=navItems,
-                read=False,
+                read=True,
                 write=False,
                 delete=False,
                 put=False,

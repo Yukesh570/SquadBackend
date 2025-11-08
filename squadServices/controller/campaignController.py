@@ -10,7 +10,7 @@ from squad.utils.authenticators import JWTAuthentication
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
 from django.utils.dateparse import parse_datetime 
-
+import openpyxl 
 from squadServices.models.campaign import Campaign, CampaignContact, Template
 from squadServices.serializer.campaignSerializer import CampaignSerializer, TemplateSerializer
 
@@ -133,29 +133,47 @@ class CampaignViewSet(viewsets.ModelViewSet):
             seenInputs = set()
 
             if file:
-                try:
-                    decodedFile = file.read().decode('utf-8')
-                except UnicodeDecodeError:
-                    file.seek(0)
-                    decodedFile = file.read().decode('latin1')
+                fileName=file.name
+                if fileName.endswith('.csv'):
+                    try:
+                        decodedFile = file.read().decode('utf-8')
+                    except UnicodeDecodeError:
+                        file.seek(0)
+                        decodedFile = file.read().decode('latin1')
 
-                ioString=io.StringIO(decodedFile)
-                reader = csv.DictReader(ioString)
+                    ioString=io.StringIO(decodedFile)
+                    reader = csv.DictReader(ioString)
 
-                for row in reader:
-                    row_lower = {k.lower(): v for k, v in row.items()}
+                    for row in reader:
+                        row_lower = {k.lower(): v for k, v in row.items()}
 
-                    for contact in row:
-                        contact = row_lower.get('contact', '').strip()
-                        if contact and contact in seenInputs:
-                            duplicateInInput.append(contact)
-                        else:
-                            seenInputs.add(contact)
-                            if is_valid_contact(contact) :
-                                    createdContacts.append(CampaignContact(campaign=campaign, contactNumber=contact))
+                        for contact in row:
+                            contact = row_lower.get('contact', '').strip()
+                            if contact and contact in seenInputs:
+                                duplicateInInput.append(contact)
                             else:
-                                invalidContacts.append(contact)
-                    
+                                seenInputs.add(contact)
+                                if is_valid_contact(contact) :
+                                        createdContacts.append(CampaignContact(campaign=campaign, contactNumber=contact))
+                                else:
+                                    invalidContacts.append(contact)
+                elif fileName.endswith('.xlsx'):
+                    wb = openpyxl.load_workbook(file)
+                    ws = wb.active
+                    # Assumes column header in the first row
+                    headers = [str(cell.value).lower() for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+                    contact_idx = headers.index('contact') if 'contact' in headers else None
+                    if contact_idx is not None:
+                        for row in ws.iter_rows(min_row=2):  # skip header
+                            contact = str(row[contact_idx].value).strip() if row[contact_idx].value else ''
+                            if contact and contact in seenInputs:
+                                duplicateInInput.append(contact)
+                            elif contact:
+                                seenInputs.add(contact)
+                                if is_valid_contact(contact):
+                                    createdContacts.append(CampaignContact(campaign=campaign, contactNumber=contact))
+                                else:
+                                    invalidContacts.append(contact)
             else:
                 contactsData=contactsData
                 if not contactsData:
