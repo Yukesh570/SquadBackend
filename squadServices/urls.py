@@ -18,26 +18,25 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import path
 
-from squadServices.controller.campaignController import  CampaignViewSet, TemplateViewSet
+from squadServices.controller.campaignController import CampaignViewSet, TemplateViewSet
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
     LoginView,
     RegisterView,
 )
-from squadServices.controller.views import NavItemViewSet, NavUserRelationViewSet, hello
+from squadServices.controller.views import (
+    GetNavUserRelationViewSet,
+    NavItemViewSet,
+    NavUserRelationViewSet,
+)
 
 
 urlpatterns = [
-    path("hello/", hello, name="hello"),
-
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", LoginView.as_view(), name="login"),
     path("user/edit/<int:pk>/", EditUserView.as_view(), name="edit-user"),
     path("changePassword/", ChangePasswordView.as_view(), name="changePassword"),
-
-
-
     path(
         "navItem/",
         NavItemViewSet.as_view(
@@ -62,40 +61,35 @@ urlpatterns = [
             }
         ),
     ),
+    
     path(
         "navUserRelation/createLabel/",
         NavUserRelationViewSet.as_view({"post": "createSidebar"}),
     ),
     path(
-        "navUserRelation/getByUserType/<str:userType>",
-        NavUserRelationViewSet.as_view({"get": "getByUserType"}),
-    ),
-    path(
         "navUserRelation/bulk-update/",
         NavUserRelationViewSet.as_view({"patch": "bulk_partial_update"}),
     ),
-    
 
-
- 
     path(
-        'campaign/',
-        CampaignViewSet.as_view({
-            'post': 'create'
-        }),
-        name='campaignContact-bulk-create',
+        "navUserRelationGet/",
+        GetNavUserRelationViewSet.as_view({"get": "list"}),
     ),
-      path(
-        'template/',
-        TemplateViewSet.as_view({
-            'get': 'list',
-            'post': 'create'
-        }),
-        name='campaignContact-bulk-create',
-    )
-
-
-
+    path(
+        "navUserRelationGet/getByUserType/<str:userType>",
+        GetNavUserRelationViewSet.as_view({"get": "getByUserType"}),
+    ),
+    
+    path(
+        "campaign/",
+        CampaignViewSet.as_view({"post": "create"}),
+        name="campaignContact-bulk-create",
+    ),
+    path(
+        "template/",
+        TemplateViewSet.as_view({"get": "list", "post": "create"}),
+        name="campaignContact-bulk-create",
+    ),
 ]
 
 

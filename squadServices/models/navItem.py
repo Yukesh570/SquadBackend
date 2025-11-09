@@ -4,6 +4,7 @@ from django.db import models
 
 class NavItem(models.Model):
     label = models.CharField(max_length=50)
+    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
     url = models.CharField(max_length=200)
     order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
@@ -15,7 +16,7 @@ class NavItem(models.Model):
 
 class NavUserRelation(models.Model):
     userType = models.CharField(max_length=50)
-    navigateId=models.ForeignKey(NavItem , on_delete=models.DO_NOTHING)
+    navigateId=models.ForeignKey(NavItem , on_delete=models.CASCADE, related_name='navigate')
     read=models.BooleanField(default=False)
     write=models.BooleanField(default=False)
     delete=models.BooleanField(default=False)

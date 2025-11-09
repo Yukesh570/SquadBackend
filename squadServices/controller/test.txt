@@ -1,0 +1,148 @@
+
+0
+: 
+{id: 1, userType: "ADMIN",…}
+delete
+: 
+false
+id
+: 
+1
+navigateId
+: 
+{id: 1, label: "Dashboard", url: "dashboard", parent: null, order: 1, is_active: true,…}
+children
+: 
+[{id: 25, label: "test", url: "test", parent: 1, order: 1, is_active: true, icon: "Airplay",…}]
+icon
+: 
+"HouseHeart"
+id
+: 
+1
+is_active
+: 
+true
+label
+: 
+"Dashboard"
+order
+: 
+1
+parent
+: 
+null
+permission
+: 
+null
+url
+: 
+"dashboard"
+put
+: 
+false
+read
+: 
+true
+userType
+: 
+"ADMIN"
+write
+: 
+false
+1
+: 
+{id: 2, userType: "ADMIN",…}
+delete
+: 
+false
+id
+: 
+2
+navigateId
+: 
+{id: 2, label: "User", url: "users", parent: null, order: 2, is_active: true, icon: "User",…}
+put
+: 
+false
+read
+: 
+false
+userType
+: 
+"ADMIN"
+write
+: 
+false
+2
+: 
+{id: 3, userType: "ADMIN",…}
+delete
+: 
+false
+id
+: 
+3
+navigateId
+: 
+{id: 3, label: "DateAndTime", url: "dataAndTime", parent: null, order: 3, is_active: true,…}
+children
+: 
+[]
+icon
+: 
+"Home"
+id
+: 
+3
+is_active
+: 
+true
+label
+: 
+"DateAndTime"
+order
+: 
+3
+parent
+: 
+null
+permission
+: 
+null
+url
+: 
+"dataAndTime"
+put
+: 
+false
+read
+: 
+true
+userType
+: 
+"ADMIN"
+write
+: 
+false
+3
+: 
+{id: 4, userType: "ADMIN",…}
+4
+: 
+{id: 6, userType: "ADMIN",…}
+5
+: 
+{id: 43, userType: "ADMIN",…}
+6
+: 
+{id: 49, userType: "ADMIN",…}
+7
+: 
+{id: 61, userType: "ADMIN",…}
+8
+: 
+{id: 73, userType: "ADMIN",…}
+9
+: 
+{id: 79, userType: "ADMIN",…}

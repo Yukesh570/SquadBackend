@@ -21,7 +21,7 @@ class CustomUserAdmin(UserAdmin):
 
 class NavItemAdmin(admin.ModelAdmin):
     model = NavItem
-    list_display = ("label", "url", "order", "is_active")
+    list_display = ("label", "url","parent", "order", "is_active")
     ordering = ["order"]
 class NavUserRelationAdmin(admin.ModelAdmin):
     model = NavUserRelation

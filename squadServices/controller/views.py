@@ -6,15 +6,12 @@ from squad.utils.authenticators import JWTAuthentication
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.users import UserType
 from squadServices.serializer.navSerializer import (
+    GetSerializer,
     NavItemSerializer,
     NavUserRelationSerializer,
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
-
-
-def hello(request):
-    return HttpResponse("Hello, world. You're at the polls index.")
 
 
 class NavItemViewSet(viewsets.ModelViewSet):
@@ -29,7 +26,27 @@ class NavItemViewSet(viewsets.ModelViewSet):
 
             return NavItem.objects.filter(is_active=True)
         return super().get_queryset()
+        
+        
+class GetNavUserRelationViewSet(viewsets.ModelViewSet):
+    serializer_class = GetSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        return NavItem.objects.filter(parent=None, is_active=True)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['userType'] = self.request.user.userType
+        return context
+    def getByUserType(self, request, *args, **kwargs):
+        userType = kwargs.get("userType")
+        related_nav_ids = NavUserRelation.objects.filter(userType=userType).values_list('navigateId', flat=True)
+        nav_items = NavItem.objects.filter(id__in=related_nav_ids, parent=None, is_active=True)
+        
+        serializer = self.get_serializer(nav_items, many=True, context={'userType': userType})
+        return Response(serializer.data)
 
 class NavUserRelationViewSet(viewsets.ModelViewSet):
     queryset = NavUserRelation.objects.all()
@@ -37,6 +54,11 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+            user = self.request.user
+            if self.action == "list":
+                return NavUserRelation.objects.filter(userType=user.userType,navigateId__parent=None)
+            return super().get_queryset()
     def create(self, request, *args, **kwargs):
         userType = request.data.get("userType")
         if not userType:
@@ -93,11 +115,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    def get_queryset(self):
-        user = self.request.user
-        if self.action == "list":
-            return NavUserRelation.objects.filter(userType=user.userType)
-        return super().get_queryset()
+    
     def getByUserType(self, request, *args, **kwargs):
         print("kwarg============s",kwargs)
         userType = kwargs.get("userType")
