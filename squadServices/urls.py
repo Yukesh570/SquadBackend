@@ -19,6 +19,7 @@ from django.conf.urls.static import static
 from django.urls import path
 
 from squadServices.controller.campaignController import CampaignViewSet, TemplateViewSet
+from squadServices.controller.emailController import EmailHostViewSet
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
@@ -29,6 +30,7 @@ from squadServices.controller.views import (
     GetNavUserRelationViewSet,
     NavItemViewSet,
     NavUserRelationViewSet,
+    sendMail,
 )
 
 
@@ -61,7 +63,6 @@ urlpatterns = [
             }
         ),
     ),
-    
     path(
         "navUserRelation/createLabel/",
         NavUserRelationViewSet.as_view({"post": "createSidebar"}),
@@ -70,7 +71,6 @@ urlpatterns = [
         "navUserRelation/bulk-update/",
         NavUserRelationViewSet.as_view({"patch": "bulk_partial_update"}),
     ),
-
     path(
         "navUserRelationGet/",
         GetNavUserRelationViewSet.as_view({"get": "list"}),
@@ -79,7 +79,6 @@ urlpatterns = [
         "navUserRelationGet/getByUserType/<str:userType>",
         GetNavUserRelationViewSet.as_view({"get": "getByUserType"}),
     ),
-    
     path(
         "campaign/",
         CampaignViewSet.as_view({"post": "create"}),
@@ -89,6 +88,21 @@ urlpatterns = [
         "template/",
         TemplateViewSet.as_view({"get": "list", "post": "create"}),
         name="campaignContact-bulk-create",
+    ),
+    path(
+        "email/",
+        sendMail,
+        name="sendmail",
+    ),
+    path(
+        "emailHost/",
+        EmailHostViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="emailHost",
     ),
 ]
 

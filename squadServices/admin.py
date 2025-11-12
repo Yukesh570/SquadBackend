@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
 from squadServices.models.campaign import Campaign, CampaignContact, Template
+from squadServices.models.email import EmailHost
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.users import User
 
@@ -45,6 +46,12 @@ class TemplateAdmin(admin.ModelAdmin):
     list_display = ("id","name")
 
 
+class EmailHostAdmin(admin.ModelAdmin):
+    model = EmailHost
+    list_display = ("id","name", "smtpHost", "smtpPort", "smtpUser", "smtpPassword", "useTls")
+    search_fields = ("name","smtpHost", "smtpUser")
+
+
 
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)
@@ -52,5 +59,6 @@ admin.site.register(NavUserRelation, NavUserRelationAdmin)
 admin.site.register(Campaign, CampaignAdmin)
 admin.site.register(CampaignContact, CampaignContactAdmin)
 admin.site.register(Template, TemplateAdmin)
+admin.site.register(EmailHost, EmailHostAdmin)
 
 

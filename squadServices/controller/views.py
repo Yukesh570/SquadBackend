@@ -2,6 +2,7 @@ from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import viewsets, status
+from squad.task import  sendEmailTask
 from squad.utils.authenticators import JWTAuthentication
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.users import UserType
@@ -12,6 +13,7 @@ from squadServices.serializer.navSerializer import (
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
+from rest_framework.decorators import api_view
 
 
 class NavItemViewSet(viewsets.ModelViewSet):
@@ -128,7 +130,9 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
         data = request.data
         if not isinstance(data, list):
             return Response({"error": "Expected a list of objects."}, status=status.HTTP_400_BAD_REQUEST)
-
+        userType=request.user.userType
+        if userType != "ADMIN":
+            return Response({"error": "You are not authorized to perform this action."}, status=status.HTTP_403_FORBIDDEN)
         updated_items = []
         for item in data:
             obj_id = item.get("id")
@@ -148,3 +152,18 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({"updated": updated_items}, status=status.HTTP_200_OK)
+
+
+
+@api_view(['POST'])
+def sendMail(request):
+    subject = request.data.get('subject')
+    message = request.data.get('message')
+    fromEmail = request.data.get('from_email')
+    recipientList = request.data.get('recipient_list')
+    emailHostId = request.data.get('email_host_id')  # new
+
+
+    sendEmailTask.delay(subject, message, fromEmail, recipientList,emailHostId)
+    
+    return Response({"detail": "Email task queued."}, status=status.HTTP_202_ACCEPTED)
