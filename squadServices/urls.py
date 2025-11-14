@@ -19,7 +19,10 @@ from django.conf.urls.static import static
 from django.urls import path
 
 from squadServices.controller.campaignController import CampaignViewSet, TemplateViewSet
-from squadServices.controller.emailController import EmailHostViewSet
+from squadServices.controller.emailController import (
+    EmailHostViewSet,
+    EmailTemplateViewSet,
+)
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
@@ -45,6 +48,24 @@ urlpatterns = [
             {
                 "get": "list",
                 "post": "create",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "navItem/<str:module>/",
+        NavItemViewSet.as_view(
+            {
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "navItem/<str:module>/<int:pk>/",
+        NavItemViewSet.as_view(
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
@@ -80,14 +101,46 @@ urlpatterns = [
         GetNavUserRelationViewSet.as_view({"get": "getByUserType"}),
     ),
     path(
-        "campaign/",
-        CampaignViewSet.as_view({"post": "create"}),
+        "campaign/<str:module>/",
+        CampaignViewSet.as_view({"post": "create", "get": "list"}),
         name="campaignContact-bulk-create",
     ),
     path(
-        "template/",
+        "template/<str:module>/",
         TemplateViewSet.as_view({"get": "list", "post": "create"}),
-        name="campaignContact-bulk-create",
+        name="templateCreate",
+    ),
+    path(
+        "template/<str:module>/<int:pk>/",
+        TemplateViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="templateCreate",
+    ),
+    path(
+        "emailTemplate/<str:module>/",
+        EmailTemplateViewSet.as_view({"get": "list", "post": "create"}),
+        name="emailTemplateCreate",
+    ),
+    path(
+        "emailTemplate/<str:module>/<int:pk>/",
+        EmailTemplateViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="emailTemplateCreate",
+    ),
+    path(
+        "template/",
+        TemplateViewSet.as_view({"get": "list"}),
+        name="templateCreate",
     ),
     path(
         "email/",
@@ -95,11 +148,22 @@ urlpatterns = [
         name="sendmail",
     ),
     path(
-        "emailHost/",
+        "emailHost/<str:module>/",
         EmailHostViewSet.as_view(
             {
                 "get": "list",
                 "post": "create",
+            }
+        ),
+        name="emailHost",
+    ),
+    path(
+        "emailHost/<str:module>/<int:pk>/",
+        EmailHostViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
             }
         ),
         name="emailHost",

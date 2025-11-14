@@ -1,9 +1,12 @@
+import json
 from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 from squad.task import  sendEmailTask
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.helper.permissionHelper import check_permission
+from squadServices.models.email import EmailTemplate
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.users import UserType
 from squadServices.serializer.navSerializer import (
@@ -28,6 +31,19 @@ class NavItemViewSet(viewsets.ModelViewSet):
 
             return NavItem.objects.filter(is_active=True)
         return super().get_queryset()
+    def perform_create(self, serializer):
+        module = self.kwargs.get('module')
+        user = self.request.user
+        check_permission(self, 'write', module)
+        serializer.save()
+    def perform_update(self, serializer):
+        module = self.kwargs.get('module')
+        check_permission(self, 'put', module)
+        serializer.save()
+    def perform_destroy(self, instance):
+        module = self.kwargs.get('module')
+        check_permission(self, 'delete', module)
+        instance.delete()
         
         
 class GetNavUserRelationViewSet(viewsets.ModelViewSet):
@@ -61,6 +77,8 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
             if self.action == "list":
                 return NavUserRelation.objects.filter(userType=user.userType,navigateId__parent=None)
             return super().get_queryset()
+
+
     def create(self, request, *args, **kwargs):
         userType = request.data.get("userType")
         if not userType:
@@ -90,6 +108,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
         )
     def createSidebar(self, request, *args, **kwargs):
         label = request.data.get("label")
+        userType=request.user.userType
         if not label:
                 return Response(
                     {"error": "label is required"}, status=status.HTTP_400_BAD_REQUEST
@@ -100,17 +119,32 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
             return Response(
                 {"error": "label already exists"}, status=status.HTTP_400_BAD_REQUEST
             )
-        relations = [
+        if(userType == "ADMIN"):
+            relations = [
             NavUserRelation(
                 userType=value,
+                navigateId=navItems,
+                read=True,
+                write=True,
+                delete=True,
+                put=True,
+            )
+            for value, label in UserType.choices
+        ]
+        
+        else:
+            relations = [
+            NavUserRelation(
+                userType=userType,
                 navigateId=navItems,
                 read=True,
                 write=False,
                 delete=False,
                 put=False,
             )
-            for value, label in UserType.choices
         ]
+        
+        
         NavUserRelation.objects.bulk_create(relations)
         return Response(
             {"message": f"{len(relations)} NavUserRelation created for '{label}'."},
@@ -119,7 +153,6 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
 
     
     def getByUserType(self, request, *args, **kwargs):
-        print("kwarg============s",kwargs)
         userType = kwargs.get("userType")
         relations = NavUserRelation.objects.filter(userType=userType)
         serializer = self.get_serializer(relations, many=True)
@@ -154,16 +187,44 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
         return Response({"updated": updated_items}, status=status.HTTP_200_OK)
 
 
-
 @api_view(['POST'])
 def sendMail(request):
+    content= EmailTemplate.objects.get(id=request.data.get("content")).content
+    print("content",content)
+    print("-============",request.data.get('from_email'))
     subject = request.data.get('subject')
-    message = request.data.get('message')
+    message = content
     fromEmail = request.data.get('from_email')
-    recipientList = request.data.get('recipient_list')
+    raw_recipient = request.data.get('recipient_list')
     emailHostId = request.data.get('email_host_id')  # new
+    attachments = []
+    if isinstance(raw_recipient, str):
+        try:
+            # Case: JSON-like list string
+            recipientList = json.loads(raw_recipient)
+            if isinstance(recipientList, str):
+                # Single email inside quotes
+                recipientList = [recipientList]
+        except:
+            # Case: single email, plain string
+            recipientList = [raw_recipient]
+        else:
+            recipientList = raw_recipient
+    for file_obj in request.FILES.getlist('attachments'):
+        import base64
+
+        attachments.append({
+            "name": file_obj.name,
+            "type": file_obj.content_type,
+            "content": base64.b64encode(file_obj.read()).decode('utf-8')
+        })
+
+    # If no file uploaded, send None
+    if len(attachments) == 0:
+        attachments = None
 
 
-    sendEmailTask.delay(subject, message, fromEmail, recipientList,emailHostId)
+
+    sendEmailTask.delay(subject, message, fromEmail, recipientList,emailHostId,attachments)
     
     return Response({"detail": "Email task queued."}, status=status.HTTP_202_ACCEPTED)

@@ -11,85 +11,12 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 from django.utils.dateparse import parse_datetime 
 import openpyxl 
+from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.campaign import Campaign, CampaignContact, Template
 from squadServices.serializer.campaignSerializer import CampaignSerializer, TemplateSerializer
 
 def is_valid_contact(contact):
     return contact.isdigit() and 7 <= len(contact) <= 15
-# class CampaignContactBulkCreateAPIView(APIView):
-#     def post(self,request):
-        
-#         campaignId=request.data.get('campaignId')
-#         file=request.FILES.get("csvFile")
-#         contactsData = request.data.get('contacts', '').strip()
-#         campaign= Campaign.objects.get(id=campaignId)
-#         createdContacts=[]
-#         skippedDuplicates=[]
-#         invalidContacts = []
-#         duplicateInInput = []
-#         existingContacts = set(CampaignContact.objects.filter(campaign=campaign).values_list('contactNumber', flat=True))
-#         seenInputs = set()
-
-#         if file:
-#             try:
-#                 decodedFile = file.read().decode('utf-8')
-#             except UnicodeDecodeError:
-#                 file.seek(0)
-#                 decodedFile = file.read().decode('latin1')
-
-#             ioString=io.StringIO(decodedFile)
-#             reader = csv.DictReader(ioString)
-
-#             for row in reader:
-#                 row_lower = {k.lower(): v for k, v in row.items()}
-
-#                 for contact in row:
-#                     contact = row_lower.get('contact', '').strip()
-#                     if contact and contact in seenInputs:
-#                         duplicateInInput.append(contact)
-#                     else:
-#                         seenInputs.add(contact)
-#                         if is_valid_contact(contact) and contact not in existingContacts:
-#                                 createdContacts.append(CampaignContact(campaign=campaign, contactNumber=contact))
-                                
-
-#                         elif contact in existingContacts:
-#                             skippedDuplicates.append(contact)
-#                         else:
-#                             invalidContacts.append(contact)
-                 
-#         else:
-#             contactsData=contactsData
-#             if not contactsData:
-#                 return Response({"error": "Field is required and cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
-
-#             if contactsData:
-#                 contacts=[c.strip() for c in contactsData.split(",") if c.strip()]
-                
-#                 for contact in contacts:
-#                     if contact in seenInputs:
-#                         duplicateInInput.append(contact)
-#                     else:
-#                         seenInputs.add(contact)           
-#                         if is_valid_contact(contact) and contact not in existingContacts:
-#                             createdContacts.append(CampaignContact(campaign=campaign, contactNumber=contact))
-                            
-
-#                         elif contact in existingContacts:
-#                             skippedDuplicates.append(contact)
-#                         else:
-#                             invalidContacts.append(contact)
-
-#         if createdContacts:
-#             CampaignContact.objects.bulk_create(createdContacts)
-#         createdContactNumbers = [c.contactNumber for c in createdContacts]
-
-#         return Response({
-#             "created": createdContactNumbers,
-#             "skippedDuplicates": skippedDuplicates,
-#             "invalidContacts": invalidContacts,
-#             "duplicateInInput" : duplicateInInput
-#         }, status=status.HTTP_201_CREATED)
 
 
 
@@ -99,9 +26,20 @@ class CampaignViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+            # Only allow access to EmailHosts owned by the requesting user
+            module = self.kwargs.get('module')
+            check_permission(self, 'read', module)
+            return Campaign.objects
+
+
+
     def create(self, request, *args, **kwargs):
         data=request.data.copy()
         name=data.get("name")
+        module = self.kwargs.get('module')
+
+        check_permission(self, 'write', module)
 
         contacts_data = data.pop('contacts', None)
         if isinstance(contacts_data, list) and len(contacts_data) == 1:
@@ -220,10 +158,26 @@ class TemplateViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+      
         if self.action == "list":
-
             return Template.objects.all()
         return super().get_queryset()
+    def perform_create(self, serializer):
+        module = self.kwargs.get('module')
+        check_permission(self, 'write', module)
+        exist=Template.objects.filter(name=serializer.validated_data.get("name"))
+        if exist.exists():
+            raise ValidationError({"error": "Template with the same name already exists."})
+        serializer.save()
+
+    def perform_update(self, serializer):
+        module = self.kwargs.get('module')
+        check_permission(self, 'put', module)
+        serializer.save()
+    def perform_destroy(self, instance):
+        module = self.kwargs.get('module')
+        check_permission(self, 'delete', module)
+        instance.delete()
 
 
                         
