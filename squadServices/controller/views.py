@@ -189,11 +189,11 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
 
 @api_view(['POST'])
 def sendMail(request):
-    content= EmailTemplate.objects.get(id=request.data.get("content")).content
     print("content",content)
     print("-============",request.data.get('from_email'))
     subject = request.data.get('subject')
-    message = content
+    message = request.data.get('content')
+
     fromEmail = request.data.get('from_email')
     raw_recipient = request.data.get('recipient_list')
     emailHostId = request.data.get('email_host_id')  # new
