@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
 from squadServices.models.campaign import Campaign, CampaignContact, Template
+from squadServices.models.company import Company, CompanyCategory, CompanyStatus
+from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.email import EmailHost, EmailTemplate
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.users import User
@@ -56,6 +58,66 @@ class EmailHostAdmin(admin.ModelAdmin):
 
 
 
+class companyCategoryAdmin(admin.ModelAdmin):
+    model = CompanyCategory
+    list_display = ("id","name","isDeleted", "createdAt", "updatedAt", "createdBy", "updatedBy")
+    search_fields = ("name",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+class companyStatusAdmin(admin.ModelAdmin):
+    model = CompanyStatus
+    list_display = ("id","name","isDeleted", "createdAt", "updatedAt", "createdBy", "updatedBy")
+    search_fields = ("name",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class countryAdmin(admin.ModelAdmin):
+    model = Country
+    list_display = ("id","name", "countryCode", "MCC", "isDeleted", "createdAt", "updatedAt", "createdBy", "updatedBy")
+    search_fields = ("name",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class stateAdmin(admin.ModelAdmin):
+    model = State
+    list_display = ("id","name", "country","isDeleted", "createdAt", "updatedAt", "createdBy", "updatedBy")
+    search_fields = ("name",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+class currencyAdmin(admin.ModelAdmin):
+    model = Currency
+    list_display = ("id","name", "country","isDeleted", "createdAt", "updatedAt", "createdBy", "updatedBy")
+    search_fields = ("name",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+class entityAdmin(admin.ModelAdmin):
+    model = Entity
+    list_display = ("id","name","isDeleted", "createdAt", "updatedAt", "createdBy", "updatedBy")
+    search_fields = ("name",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+class timeZoneAdmin(admin.ModelAdmin):
+    model = TimeZone
+    list_display = ("id","name","isDeleted", "createdAt", "updatedAt", "createdBy", "updatedBy")
+    search_fields = ("name",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+class companyAdmin(admin.ModelAdmin):
+    model = Company
+    list_display = ("id","name", "shortName", "phone", "category", "companyEmail",
+                    "supportEmail", "billingEmail", "ratesEmail", "lowBalanceAlertEmail", 
+                    "country", "state","category","status","currency","timeZone","businessEntity","customerCreditLimit",
+                    "vatNumber","vendorCreditLimit","balanceAlertAmount","referencNumber","vatNumber","address","validityPeriod",
+                    "defaultEmail","onlinePayment","companyBlocked","allowWhiteListedCards","sendDailyReports","allowNetting","showHlrApi","enableVendorPanel",
+                    "isDeleted", "createdBy", "createdAt", "updatedBy","updatedAt",
+                    "address", "validityPeriod","enableVendorPanel")
+    search_fields = ("name", "companyType", "emailType",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+
+
+
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)
 admin.site.register(NavUserRelation, NavUserRelationAdmin)
@@ -65,5 +127,14 @@ admin.site.register(Template, TemplateAdmin)
 admin.site.register(EmailTemplate, EmailTemplateAdmin)
 
 admin.site.register(EmailHost, EmailHostAdmin)
+
+admin.site.register(CompanyCategory, companyCategoryAdmin)
+admin.site.register(CompanyStatus, companyStatusAdmin)
+admin.site.register(Country, countryAdmin)
+admin.site.register(State, stateAdmin)
+admin.site.register(Currency, currencyAdmin)
+admin.site.register(Entity, entityAdmin)
+admin.site.register(TimeZone, timeZoneAdmin)
+admin.site.register(Company, companyAdmin)
 
 

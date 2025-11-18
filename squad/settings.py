@@ -40,6 +40,8 @@ INSTALLED_APPS = [
     'squadServices',
     'rest_framework',
     'corsheaders',
+    'drf_spectacular',
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -47,6 +49,11 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 ]
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Your API Title',
+    'DESCRIPTION': 'Your API description',
+    'VERSION': '1.0.0',
+}
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -68,6 +75,10 @@ REST_FRAMEWORK = {
      'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
     "EXCEPTION_HANDLER": "squad.utils.exception_handler.custom_exception_handler",
 
 }
@@ -142,7 +153,7 @@ CELERY_TIMEZONE = 'UTC'
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kathmandu'
 
 USE_I18N = True
 

@@ -1,24 +1,16 @@
-"""SmartGateway URL Configuration
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/2.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularSwaggerView,
+    SpectacularRedocView,
+)
 
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import path
 
-from squadServices.controller.campaignController import CampaignViewSet, TemplateViewSet
+from squadServices.controller.campaignController import CampaignContactViewSet, CampaignViewSet, TemplateViewSet
+from squadServices.controller.companyController import CompanyCategoryViewSet, CompanyStatusViewSet, CompanyViewSet
+from squadServices.controller.countryController import CountryViewSet, CurrencyViewSet, EntityViewSet, StateViewSet, TimeZoneViewSet
 from squadServices.controller.emailController import (
     EmailHostViewSet,
     EmailTemplateViewSet,
@@ -38,12 +30,19 @@ from squadServices.controller.views import (
 
 
 urlpatterns = [
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path(
+        "api/docs/",
+        SpectacularSwaggerView.as_view(url_name="schema"),
+        name="swagger-ui",
+    ),
+    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", LoginView.as_view(), name="login"),
     path("user/edit/<int:pk>/", EditUserView.as_view(), name="edit-user"),
     path("changePassword/", ChangePasswordView.as_view(), name="changePassword"),
     path(
-        "navItem/",
+        "navItem/<str:module>/",
         NavItemViewSet.as_view(
             {
                 "get": "list",
@@ -104,6 +103,23 @@ urlpatterns = [
         "campaign/<str:module>/",
         CampaignViewSet.as_view({"post": "create", "get": "list"}),
         name="campaignContact-bulk-create",
+    ),
+    path(
+        "campaign/<str:module>/<int:pk>/",
+        CampaignViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="campaign",
+    ),
+ 
+    path(
+        "campaignContact/<str:module>/<int:pk>/",
+        CampaignContactViewSet.as_view({ "get": "list"}),
+        name="campaignContact",
     ),
     path(
         "template/<str:module>/",
@@ -168,6 +184,169 @@ urlpatterns = [
         ),
         name="emailHost",
     ),
+    path(
+        "country/<str:module>/",
+        CountryViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "country/<str:module>/<int:pk>/",
+        CountryViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "state/<str:module>/",
+        StateViewSet.as_view(
+              {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "state/<str:module>/<int:pk>/",
+        StateViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+
+    
+    path(
+        "currency/<str:module>/",
+        CurrencyViewSet.as_view(
+              {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "currency/<str:module>/<int:pk>/",
+        CurrencyViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "entity/<str:module>/",
+        EntityViewSet.as_view(
+              {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "entity/<str:module>/<int:pk>/",
+        EntityViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "timeZone/<str:module>/",
+        TimeZoneViewSet.as_view(
+              {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "timeZone/<str:module>/<int:pk>/",
+        TimeZoneViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "companyCategory/<str:module>/",
+        CompanyCategoryViewSet.as_view(
+              {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "companyCategory/<str:module>/<int:pk>/",
+        CompanyCategoryViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "companyStatus/<str:module>/",
+        CompanyStatusViewSet.as_view(
+              {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "companyStatus/<str:module>/<int:pk>/",
+        CompanyStatusViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "company/<str:module>/",
+        CompanyViewSet.as_view(
+              {
+                "get": "list",
+                "post": "create",
+
+            }
+        ),
+    ),
+    path(
+        "company/<str:module>/<int:pk>/",
+        CompanyViewSet.as_view(
+              {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+
 ]
 
 

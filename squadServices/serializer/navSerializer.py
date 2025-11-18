@@ -7,7 +7,6 @@ class NavItemSerializer(serializers.ModelSerializer):
         model = NavItem
         fields = ['id', 'label', 'url', 'parent','order', 'is_active', 'icon']
 
-
 class NavUserRelationSerializer(serializers.ModelSerializer):
     navigateId = NavItemSerializer(read_only=True)  
 

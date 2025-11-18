@@ -11,26 +11,45 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 from django.utils.dateparse import parse_datetime 
 import openpyxl 
+from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.campaign import Campaign, CampaignContact, Template
-from squadServices.serializer.campaignSerializer import CampaignSerializer, TemplateSerializer
+from squadServices.serializer.campaignSerializer import CampaignContactSerializer, CampaignSerializer, TemplateSerializer
 
 def is_valid_contact(contact):
     return contact.isdigit() and 7 <= len(contact) <= 15
 
+class CampaignContactViewSet(viewsets.ModelViewSet):
+    queryset = CampaignContact.objects.all()
+    serializer_class = CampaignContactSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
+    def get_queryset(self):
+            module = self.kwargs.get('module')
+            check_permission(self, 'read', module)
+            return CampaignContact.objects.filter(campaign__id=self.kwargs.get('pk'))
 
 class CampaignViewSet(viewsets.ModelViewSet):
     queryset = Campaign.objects.all()
     serializer_class = CampaignSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    # pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-            # Only allow access to EmailHosts owned by the requesting user
             module = self.kwargs.get('module')
             check_permission(self, 'read', module)
-            return Campaign.objects
+            return Campaign.objects.all()
+    def perform_update(self, serializer):
+        module = self.kwargs.get('module')
+        check_permission(self, 'put', module)
+        serializer.save()
+    def perform_destroy(self, instance):
+        module = self.kwargs.get('module')
+        check_permission(self, 'delete', module)
+        instance.delete()
 
 
 
