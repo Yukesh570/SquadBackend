@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework import viewsets, status
 from squad.task import sendEmailTask
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.email import EmailTemplate
 from squadServices.models.navItem import NavItem, NavUserRelation
@@ -17,6 +18,7 @@ from squadServices.serializer.navSerializer import (
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.decorators import api_view
+from rest_framework.exceptions import ValidationError
 
 
 class NavItemViewSet(viewsets.ModelViewSet):
@@ -25,11 +27,14 @@ class NavItemViewSet(viewsets.ModelViewSet):
     # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         if self.action == "list":
+            module = self.kwargs.get("module")
+            check_permission(self, "read", module)
 
-            return NavItem.objects.filter(is_active=True)
+            return NavItem.objects.filter(is_active=True,isDeleted=False)
         return super().get_queryset()
 
     def perform_create(self, serializer):
@@ -37,26 +42,43 @@ class NavItemViewSet(viewsets.ModelViewSet):
         print("asdfasdfasdf", module)
         user = self.request.user
         check_permission(self, "write", module)
-        serializer.save()
+        label=serializer.validated_data.get("label")
+
+        exist = NavItem.objects.filter(name__iexact=label, isDeleted=False)
+        if exist.exists():
+            raise ValidationError({"error": "NavItem with this name already exists."})
+        serializer.save(createdBy=user, updatedBy=user) 
+        parent=serializer.validated_data.get("parent")
+        if parent:
+            print("parent",parent)
+            url=parent.url+ "/" + serializer.validated_data.get("url")
+            print("url==",url)
+            serializer.validated_data["url"] = url
+        serializer.save(createdBy=user, updatedBy=user)
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
         check_permission(self, "put", module)
-        serializer.save()
+        user = self.request.user
+        serializer.save(updatedBy=user)
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
         check_permission(self, "delete", module)
-        instance.delete()
+        user = self.request.user
+        instance.isDeleted = True
+        instance.updatedBy = user
+        instance.save()
 
 
 class GetNavUserRelationViewSet(viewsets.ModelViewSet):
     serializer_class = GetSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        return NavItem.objects.filter(parent=None, is_active=True)
+        return NavItem.objects.filter(parent=None, is_active=True, isDeleted=False)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -69,7 +91,7 @@ class GetNavUserRelationViewSet(viewsets.ModelViewSet):
             "navigateId", flat=True
         )
         nav_items = NavItem.objects.filter(
-            id__in=related_nav_ids, parent=None, is_active=True
+            id__in=related_nav_ids, parent=None, is_active=True, isDeleted=False
         )
 
         serializer = self.get_serializer(
@@ -83,6 +105,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
     serializer_class = NavUserRelationSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         user = self.request.user
@@ -98,7 +121,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
             return Response(
                 {"error": "userType is required"}, status=status.HTTP_400_BAD_REQUEST
             )
-        navItems = NavItem.objects.filter(is_active=True)
+        navItems = NavItem.objects.filter(is_active=True, isDeleted=False)
         if NavUserRelation.objects.filter(userType=userType).exists():
             return Response(
                 {"error": "userType already exists"}, status=status.HTTP_400_BAD_REQUEST
@@ -127,7 +150,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
             return Response(
                 {"error": "label is required"}, status=status.HTTP_400_BAD_REQUEST
             )
-        navItems = NavItem.objects.filter(label=label).first()
+        navItems = NavItem.objects.filter(label=label, isDeleted=False).first()
         print("navItems", navItems.id)
         if NavUserRelation.objects.filter(navigateId=navItems.id).exists():
             return Response(

@@ -36,20 +36,23 @@ class CampaignViewSet(viewsets.ModelViewSet):
     serializer_class = CampaignSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
-    # pagination_class = StandardResultsSetPagination
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
             module = self.kwargs.get('module')
             check_permission(self, 'read', module)
-            return Campaign.objects.all()
+            return Campaign.objects.filter(isDeleted=False)
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         check_permission(self, 'put', module)
-        serializer.save()
+        serializer.save(updatedBy=self.request.user)
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
         check_permission(self, 'delete', module)
-        instance.delete()
+        user = self.request.user
+        instance.isDeleted = True
+        instance.updatedBy = user
+        instance.save()
 
 
 
@@ -69,14 +72,14 @@ class CampaignViewSet(viewsets.ModelViewSet):
         scheduleValue = data.get('schedule')
         file=request.FILES.get("csvFile")
         template_instance = None
-        existingContacts = Campaign.objects.filter(name=name)
-        if existingContacts.exists():
+        existingCampaign = Campaign.objects.filter(name__iexact=name, isDeleted=False)
+        if existingCampaign.exists():
             return Response({"error": "Campaign with the same name already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
         if templateId:
             template_instance = get_object_or_404(Template, id=templateId)
         with transaction.atomic():
-            reponse=Campaign.objects.create(template=template_instance,schedule=scheduleValue,objective=objective,content=content,name=name)
+            reponse=Campaign.objects.create(template=template_instance,schedule=scheduleValue,objective=objective,content=content,name=name,createdBy=self.request.user,updatedBy=self.request.user)
             serializer = self.get_serializer(reponse)
             campaignId=reponse.id
             contactsData = contacts_data
@@ -175,28 +178,34 @@ class TemplateViewSet(viewsets.ModelViewSet):
     # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
       
         if self.action == "list":
-            return Template.objects.all()
+            return Template.objects.filter(isDeleted=False)
         return super().get_queryset()
     def perform_create(self, serializer):
         module = self.kwargs.get('module')
+        user = self.request.user
         check_permission(self, 'write', module)
-        exist=Template.objects.filter(name=serializer.validated_data.get("name"))
+        exist=Template.objects.filter(name__iexact=serializer.validated_data.get("name"),isDeleted=False)
         if exist.exists():
             raise ValidationError({"error": "Template with the same name already exists."})
-        serializer.save()
+        serializer.save(createdBy=user, updatedBy=user)
 
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
+        user = self.request.user
         check_permission(self, 'put', module)
-        serializer.save()
+        serializer.save(updatedBy=user)
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
         check_permission(self, 'delete', module)
-        instance.delete()
+        user = self.request.user
+        instance.isDeleted = True
+        instance.updatedBy = user
+        instance.save()
 
 
                         

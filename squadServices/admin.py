@@ -20,12 +20,15 @@ class CustomUserAdmin(UserAdmin):
     )
     list_display = ("id","phone", "userType") + UserAdmin.list_display 
     search_fields = UserAdmin.search_fields + ("phone", "userType")
+    readonly_fields = ("createdAt", "updatedAt")
 
 
 class NavItemAdmin(admin.ModelAdmin):
     model = NavItem
     list_display = ("label", "url","parent", "order", "is_active")
     ordering = ["order"]
+    readonly_fields = ("createdAt", "updatedAt")
+
 class NavUserRelationAdmin(admin.ModelAdmin):
     model = NavUserRelation
     list_display = ("id","userType", "navigateId", "read", "write", "delete", "put")
@@ -37,6 +40,8 @@ class CampaignAdmin(admin.ModelAdmin):
     model = Campaign
     list_display = ("id","name", "objective", "content", "schedule")
     search_fields = ("name", "navigateId__label")
+    readonly_fields = ("createdAt", "updatedAt")
+
 
 class CampaignContactAdmin(admin.ModelAdmin):
     model = CampaignContact
@@ -46,16 +51,19 @@ class CampaignContactAdmin(admin.ModelAdmin):
 class TemplateAdmin(admin.ModelAdmin):
     model = Template
     list_display = ("id","name")
+    readonly_fields = ("createdAt", "updatedAt")
+
 class EmailTemplateAdmin(admin.ModelAdmin):
     model = EmailTemplate
     list_display = ("id","name")
+    readonly_fields = ("createdAt", "updatedAt")
 
 
 class EmailHostAdmin(admin.ModelAdmin):
     model = EmailHost
     list_display = ("id","name", "smtpHost", "smtpPort", "smtpUser", "smtpPassword", "security")
     search_fields = ("name","smtpHost", "smtpUser")
-
+    readonly_fields = ("createdAt", "updatedAt")
 
 
 class companyCategoryAdmin(admin.ModelAdmin):

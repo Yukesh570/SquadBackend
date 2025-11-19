@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.db import models
 
@@ -14,5 +15,8 @@ class User(AbstractUser):
     # Your existing fields
     phone = models.CharField(max_length=25, null=True, blank=True)
     userType = models.CharField(max_length=20, choices=UserType.choices, default="SALES")
+    isDeleted = models.BooleanField(default=False)
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedAt = models.DateTimeField(auto_now=True)
 
    

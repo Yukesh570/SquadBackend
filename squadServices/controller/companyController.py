@@ -33,10 +33,7 @@ class CompanyCategoryViewSet(viewsets.ModelViewSet):
         user = self.request.user
         check_permission(self, 'write', module)
         name=serializer.validated_data.get("name")
-        print("nam===============e",name)
         exist = CompanyCategory.objects.filter(name__iexact=name, isDeleted=False)
-        print("exist===============e",exist)
-
         if exist.exists():
             raise ValidationError({"error": "CompanyCategory with this name already exists."})
         serializer.save(createdBy=user, updatedBy=user) 

@@ -12,7 +12,7 @@ class CountrySerializer(serializers.ModelSerializer):
 
 
 class StateSerializer(serializers.ModelSerializer):
-    countryName = CountrySerializer(read_only=True, source='country')  
+    countryName = serializers.CharField(source='country.name', read_only=True)
 
     class Meta:
         model = State
@@ -20,7 +20,7 @@ class StateSerializer(serializers.ModelSerializer):
 
 
 class CurrencySerializer(serializers.ModelSerializer):
-    countryName = CountrySerializer(read_only=True, source='country')  
+    countryName = serializers.CharField(source='country.name', read_only=True)
 
     class Meta:
         model = Currency

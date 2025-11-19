@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.db import models
 
+from squad import settings
+
 
 class NavItem(models.Model):
     label = models.CharField(max_length=50)
@@ -9,7 +11,12 @@ class NavItem(models.Model):
     order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
     icon = models.CharField(max_length=50, default="Home")  # 👈 New field
+    isDeleted = models.BooleanField(default=False)
 
+    createdBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='navItem_created')
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='navItem_updated')
+    updatedAt = models.DateTimeField(auto_now=True)
     def __str__(self):
         return self.label
 

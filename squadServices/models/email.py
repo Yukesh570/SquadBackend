@@ -12,7 +12,12 @@ class EmailHost(models.Model):
     smtpUser = models.CharField(max_length=255)
     smtpPassword = models.CharField(max_length=255)
     security = models.CharField(max_length=20, choices=securityType.choices,default="TLS")
+    isDeleted = models.BooleanField(default=False)
 
+    createdBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='emailHost_created')
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='emailHost_updated')
+    updatedAt = models.DateTimeField(auto_now=True)
     def __str__(self):
         return self.name
     
@@ -24,6 +29,11 @@ class EmailTemplate(models.Model):
     
     name = models.CharField(max_length=100,unique=True)
     content = models.TextField()
+    isDeleted = models.BooleanField(default=False)
 
+    createdBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='emailTemplate_created')
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='emailTemplate_updated')
+    updatedAt = models.DateTimeField(auto_now=True)
     def __str__(self):
         return self.name

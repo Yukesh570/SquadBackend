@@ -9,7 +9,7 @@ from squadServices.models.email import EmailHost
 @shared_task
 def sendEmailTask(subject, message, fromEmail, recipientList, emailHostId,attachments=None):
     try:
-        emailHost = EmailHost.objects.get(pk=emailHostId)
+        emailHost = EmailHost.objects.get(pk=emailHostId, isDeleted=False)
     except EmailHost.DoesNotExist:
         return
     if emailHost.security == "TLS":

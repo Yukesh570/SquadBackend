@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.navItem import NavItem
@@ -65,6 +66,8 @@ class StateViewSet(viewsets.ModelViewSet):
     # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
 
     def get_queryset(self):
         if self.action == "list":
