@@ -44,7 +44,7 @@ class NavItemViewSet(viewsets.ModelViewSet):
         check_permission(self, "write", module)
         label=serializer.validated_data.get("label")
 
-        exist = NavItem.objects.filter(name__iexact=label, isDeleted=False)
+        exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
         if exist.exists():
             raise ValidationError({"error": "NavItem with this name already exists."})
         serializer.save(createdBy=user, updatedBy=user) 
