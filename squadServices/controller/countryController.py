@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.helper.csvDownloadHelper import start_csv_export
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
@@ -67,17 +68,29 @@ class CountryViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+    @action(detail=False, methods=['get'], url_path="downloadCsv")
+    def csv(self, request, module=None):
+        module = self.kwargs.get('module')
+        check_permission(self, 'read', module)
+        filtered_qs = self.filter_queryset(self.get_queryset())
+        filter_dict = getattr(getattr(filtered_qs.query, 'where', None), 'children', [])
+        print("filter_dict",filter_dict)
+        return start_csv_export(self, request, 
+                                module,
+                                model_name="squadServices.Country",
+                                fields=["id","name","countryCode","MCC","createdAt"],
+                                filter_dict=filter_dict,)
 
 
 class StateFilter(django_filters.FilterSet):
     name = django_filters.CharFilter(lookup_expr='icontains') 
-    country_name = django_filters.CharFilter(
+    countryName = django_filters.CharFilter(
         field_name='country__name',
         lookup_expr='icontains'
     )
     class Meta:
         model = State
-        fields = ['name', 'country_name']
+        fields = ['name', 'countryName']
 class StateViewSet(viewsets.ModelViewSet):
     queryset = State.objects.all()
     serializer_class = StateSerializer

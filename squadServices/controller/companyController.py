@@ -4,8 +4,8 @@ from django.conf import settings
 from django.http import FileResponse, HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import viewsets
-from squad.task import export_companies_csv
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.helper.csvDownloadHelper import start_csv_export
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
@@ -215,91 +215,95 @@ class CompanyViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        
+    
     @action(detail=False, methods=['get'], url_path="downloadCsv")
-    def start_csv_export(self, request, module=None):
+    def csv(self, request, module=None):
         module = self.kwargs.get('module')
-        print("Query Params Received:", request.query_params)
         check_permission(self, 'read', module)
-
-        # Apply filters the same way DRF FilterSet does
         filtered_qs = self.filter_queryset(self.get_queryset())
-        print("Filtered queryset count:", filtered_qs.count())
+        filter_dict = getattr(getattr(filtered_qs.query, 'where', None), 'children', [])
+        return start_csv_export(self, request, 
+                                module,
+                                model_name="squadServices.Company",
+                                fields=["id","name","shortName","phone","companyEmail","supportEmail",
+                                                        "billingEmail","ratesEmail","lowBalanceAlertEmail",],
+                                filter_dict=filter_dict,)
+   
+        
+    # @action(detail=False, methods=['get'], url_path="downloadCsv")
+    # def start_csv_export(self, request, module=None):
+    #     module = self.kwargs.get('module')
+    #     check_permission(self, 'read', module)
 
-        # Print the sql query
-        print("SQL Query:", str(filtered_qs.query))
+    #     # Apply filters the same way DRF FilterSet does
+    #     filtered_qs = self.filter_queryset(self.get_queryset())
+  
 
-        # Convert queryset filters into simple filter dict
-        # (primary columns only – complex filters need customizing)
-        filter_dict = filtered_qs.query.__dict__.get('where').children
-        print("filter_dict",filter_dict )
-        filters = {}
-        for f in filter_dict:
-            try:
-                filters[f.lhs.target.name] = f.rhs
-            except:
-                pass
+    #     # Convert queryset filters into simple filter dict
+    #     # (primary columns only – complex filters need customizing)
+    #     filter_dict = filtered_qs.query.__dict__.get('where').children
+    #     filters = {}
+    #     for f in filter_dict:
+    #         try:
+    #             filters[f.lhs.target.name] = f.rhs
+    #         except:
+    #             pass
 
-        # Start Celery Task
-        for obj in filtered_qs:
-            print(obj.id, obj.name, obj.companyEmail, obj.phone)  # or serialize it
-        print("--------------------------------------")
-        print("Final Filters Dict:", filters)
-        print("--------------------------")
-        task = export_companies_csv.delay(filters)
+    #     # Start Celery Task
+    #     task = export_model_csv.delay( model_name="squadServices.Company",filters=filters,fields=["id","name","shortName","phone","companyEmail","supportEmail","billingEmail","ratesEmail","lowBalanceAlertEmail",], module=module)
 
-        return Response({
-            "task_id": task.id,
-            "status": "processing"
-        })
+    #     return Response({
+    #         "task_id": task.id,
+    #         "status": "processing"
+    #     })
 
-    @action(detail=False, methods=['get'], url_path="csv-status/(?P<module>[^/.]+)")
-    def csv_status(self, request, module=None):
-        task_id = request.query_params.get("task_id")
-        if not task_id:
-            return Response({"error": "task_id required"}, status=400)
+    # @action(detail=False, methods=['get'], url_path="csv-status/(?P<module>[^/.]+)")
+    # def csv_status(self, request, module=None):
+    #     task_id = request.query_params.get("task_id")
+    #     if not task_id:
+    #         return Response({"error": "task_id required"}, status=400)
 
-        result = AsyncResult(task_id)
+    #     result = AsyncResult(task_id)
 
-        if result.successful():
-            filename = result.result
-            download_url = request.build_absolute_uri(
-                f"/company/download-file/{module}/{filename}/"
-            )
-            return Response({
-                "ready": True,
-                "download_url": download_url
-            })
+    #     if result.successful():
+    #         filename = result.result
+    #         download_url = request.build_absolute_uri(
+    #             f"/company/download-file/{module}/{filename}/"
+    #         )
+    #         return Response({
+    #             "ready": True,
+    #             "download_url": download_url
+    #         })
 
-        return Response({"ready": False})
+    #     return Response({"ready": False})
 
-    @action(detail=False, methods=['get'], url_path="download-file/(?P<module>[^/]+)/(?P<filename>[^/]+)",authentication_classes=[],
-        permission_classes=[AllowAny],)
-    def download_file(self, request, module, filename):
-        file_path = os.path.join(settings.BASE_DIR, "exports", filename)
+    # @action(detail=False, methods=['get'], url_path="download-file/(?P<module>[^/]+)/(?P<filename>[^/]+)",authentication_classes=[],
+    #     permission_classes=[AllowAny],)
+    # def download_file(self, request, module, filename):
+    #     file_path = os.path.join(settings.BASE_DIR, "exports", filename)
 
-        if not os.path.exists(file_path):
-            return Response({"error": "File not found"}, status=404)
-        file_handle = open(file_path, "rb")
+    #     if not os.path.exists(file_path):
+    #         return Response({"error": "File not found"}, status=404)
+    #     file_handle = open(file_path, "rb")
 
-        response = FileResponse(open(file_path, "rb"), as_attachment=True)
-        response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
-        response["Content-Type"] = "text/csv"
-        def remove_file_callback(response):
-            try:
-                file_handle.close()
-                os.remove(file_path)
-            except Exception as e:
-                print("Error deleting file:", e)
+    #     response = FileResponse(open(file_path, "rb"), as_attachment=True)
+    #     response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
+    #     response["Content-Type"] = "text/csv"
+    #     def remove_file_callback(response):
+    #         try:
+    #             file_handle.close()
+    #             os.remove(file_path)
+    #         except Exception as e:
+    #             print("Error deleting file:", e)
 
-        response.close = lambda *args, **kwargs: (
-            FileResponse.close(response),
-            remove_file_callback(response),
-        )
-        return response
+    #     response.close = lambda *args, **kwargs: (
+    #         FileResponse.close(response),
+    #         remove_file_callback(response),
+    #     )
+    #     return response
 
-    def get_permissions(self):
-        # Allow anyone for download_file
-        if self.action == "download_file":
-            return [AllowAny()]
-        return super().get_permissions()
+    # def get_permissions(self):
+    #     # Allow anyone for download_file
+    #     if self.action == "download_file":
+    #         return [AllowAny()]
+    #     return super().get_permissions()

@@ -3,6 +3,8 @@ from django.contrib.auth.admin import UserAdmin
 
 from squadServices.models.campaign import Campaign, CampaignContact, Template
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
+from squadServices.models.connectivity.connectivity import Connectivity
+from squadServices.models.connectivity.verdor import Vendor
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.email import EmailHost, EmailTemplate
 from squadServices.models.navItem import NavItem, NavUserRelation
@@ -124,7 +126,17 @@ class companyAdmin(admin.ModelAdmin):
 
 
 
+class connectivityAdmin(admin.ModelAdmin):
+    model = Connectivity
+    list_display = ("id","smppHost", "smppPort", "systemID", "isDeleted", "createdAt", "updatedAt")
+    search_fields = ("smppHost", "systemID")
+    readonly_fields = ("createdAt", "updatedAt")
 
+class vendorAdmin(admin.ModelAdmin):
+    model = Vendor
+    list_display = ("id","company", "profileName", "connectionType", "isDeleted", "createdAt", "updatedAt")
+    search_fields = ("companyName", "profileName")
+    readonly_fields = ("createdAt", "updatedAt")
 
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)
@@ -144,5 +156,5 @@ admin.site.register(Currency, currencyAdmin)
 admin.site.register(Entity, entityAdmin)
 admin.site.register(TimeZone, timeZoneAdmin)
 admin.site.register(Company, companyAdmin)
-
-
+admin.site.register(Connectivity, connectivityAdmin)
+admin.site.register(Vendor, vendorAdmin)

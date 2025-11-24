@@ -27,6 +27,7 @@ from squadServices.controller.views import (
     NavUserRelationViewSet,
     sendMail,
 )
+from squadServices.helper.csvDownloadHelper import csv_status, download_file
 
 
 urlpatterns = [
@@ -338,17 +339,17 @@ urlpatterns = [
     ),
     path(
     "company/downloadCsv/<str:module>/",
-    CompanyViewSet.as_view({"get": "start_csv_export"}),
+    CompanyViewSet.as_view({"get": "csv"}),
+),
+ path(
+    "country/downloadCsv/<str:module>/",
+    CountryViewSet.as_view({"get": "csv"}),
 ),
     path(
-    "company/csv-status/<str:module>/",
-    CompanyViewSet.as_view({"get": "csv_status"}),
+    "csv-status/<str:module>/",
+    csv_status,
 ),
-    path(
-    "company/download-file/<str:module>/<str:filename>/",
-    CompanyViewSet.as_view({"get": "download_file"}),
-    name="company-download-file"
-),
+    path("download-file/<str:module>/<str:filename>/", download_file, name="download-file"),
     path(
         "company/<str:module>/<int:pk>/",
         CompanyViewSet.as_view(
