@@ -53,14 +53,14 @@ urlpatterns = [
             }
         ),
     ),
-    path(
-        "navItem/<str:module>/",
-        NavItemViewSet.as_view(
-            {
-                "post": "create",
-            }
-        ),
-    ),
+    # path(
+    #     "navItem/<str:module>/",
+    #     NavItemViewSet.as_view(
+    #         {
+    #             "post": "create",
+    #         }
+    #     ),
+    # ),
     path(
         "navItem/<str:module>/<int:pk>/",
         NavItemViewSet.as_view(
@@ -336,6 +336,19 @@ urlpatterns = [
             }
         ),
     ),
+    path(
+    "company/downloadCsv/<str:module>/",
+    CompanyViewSet.as_view({"get": "start_csv_export"}),
+),
+    path(
+    "company/csv-status/<str:module>/",
+    CompanyViewSet.as_view({"get": "csv_status"}),
+),
+    path(
+    "company/download-file/<str:module>/<str:filename>/",
+    CompanyViewSet.as_view({"get": "download_file"}),
+    name="company-download-file"
+),
     path(
         "company/<str:module>/<int:pk>/",
         CompanyViewSet.as_view(

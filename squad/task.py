@@ -1,8 +1,13 @@
+import os
+from time import time
 from celery import shared_task
 from django.core.mail import send_mail
 from django.core.mail import get_connection, EmailMessage
 from django.core.mail import EmailMultiAlternatives
-
+from datetime import datetime
+import csv
+from django.conf import settings
+from squadServices.models.company import Company
 from squadServices.models.email import EmailHost
 
 
@@ -28,14 +33,6 @@ def sendEmailTask(subject, message, fromEmail, recipientList, emailHostId,attach
             password=emailHost.smtpPassword,
             use_ssl=True,
         )
-    # message = """
-    # <p>Dear {member},</p>
-    # <p>Merchant TouristSavers from {merchantname} in your TouristSaver account are going to expire on {merchantpiinkexpirydate}.</p>
-    # """.format(
-    #     member="rewrew",
-    #     merchantname="merchantname",
-    #     merchantpiinkexpirydate="merchantpiinkexpirydate",
-    # )
     email = EmailMultiAlternatives(
         subject = subject + "\u200B",
         body=message,
@@ -65,3 +62,81 @@ def sendEmailTask(subject, message, fromEmail, recipientList, emailHostId,attach
 
 
     email.send()
+
+@shared_task
+def delete_exported_file_later(filepath):
+    """Delete an exported CSV file after some delay."""
+    import time, os
+    time.sleep(120)
+
+    try:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print("Deleted CSV:", filepath)
+    except Exception as e:
+        print("Error deleting CSV:", e)
+
+
+@shared_task
+def export_companies_csv(filters=None):
+    """
+    Generate CSV using Celery.
+    filters will be used to filter the queryset exactly like DRF.
+    """
+
+    # Generate filename
+    filename = f"companies_{int(time())}.csv"
+    export_dir = os.path.join(settings.MEDIA_ROOT, "exports")
+    os.makedirs(export_dir, exist_ok=True)
+
+    filepath = os.path.join(export_dir, filename)
+
+    # Base queryset
+    queryset = Company.objects.all(isDeleted=False)
+
+    # Apply filters if passed
+    if filters:
+        transformed_filters = {
+        f"{k}__icontains": v for k, v in filters.items()
+        }
+        queryset = queryset.filter(**transformed_filters)
+
+    # Select related for speed
+    queryset = queryset.select_related(
+        'category', 'status', 'currency', 'timeZone', 'businessEntity'
+    )
+
+    # Write CSV
+    with open(filepath, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        # Header
+        writer.writerow([
+            'ID', 'Name', 'Short Name', 'Phone', 'Company Email', 
+            'Category', 'Status', 'Currency', 'Time Zone',
+            'Business Entity', 'Customer Credit Limit',
+            'Vendor Credit Limit', 'Address', 'Blocked'
+        ])
+
+        # Iterator = memory safe
+        for obj in queryset.iterator(chunk_size=2000):
+            writer.writerow([
+                obj.id,
+                obj.name,
+                obj.shortName,
+                obj.phone,
+                obj.companyEmail,
+                obj.category.name if obj.category else "",
+                obj.status.name if obj.status else "",
+                obj.currency.name if obj.currency else "",
+                obj.timeZone.name if obj.timeZone else "",
+                obj.businessEntity.name if obj.businessEntity else "",
+                obj.customerCreditLimit,
+                obj.vendorCreditLimit,
+                obj.address,
+                obj.companyBlocked
+            ])
+    delete_exported_file_later.delay(filepath)
+
+    # Return file path (served via MEDIA_URL)
+    return filename

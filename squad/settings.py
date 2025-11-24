@@ -142,6 +142,8 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 # EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')  # Set in .env file securely
 # DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 CELERY_BROKER_URL = 'amqp://guest:guest@localhost:5672//'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/1'         # <--- important
+
 CELERY_RESULT_BACKEND = 'rpc://'  # or another backend, e.g. 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'

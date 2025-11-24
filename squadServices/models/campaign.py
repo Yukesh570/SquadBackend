@@ -7,7 +7,7 @@ from squad import settings
 class objectiveType(models.TextChoices):
     Promotion= "Promotion"
     Announcement = "Announcement"
-    Re_engagement = "Re_engagement"
+    Re_engagement = "Re-engagement"
  
 class Template(models.Model):
     name = models.CharField(max_length=100,unique=True)

@@ -15,9 +15,17 @@ from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.campaign import Campaign, CampaignContact, Template
 from squadServices.serializer.campaignSerializer import CampaignContactSerializer, CampaignSerializer, TemplateSerializer
+from django_filters.rest_framework import DjangoFilterBackend
+import django_filters
 
 def is_valid_contact(contact):
     return contact.isdigit() and 7 <= len(contact) <= 15
+class CampaignFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(lookup_expr='icontains')  
+
+    class Meta:
+        model = Campaign
+        fields = ['name', 'objective', 'content', 'template', 'schedule']
 
 class CampaignContactViewSet(viewsets.ModelViewSet):
     queryset = CampaignContact.objects.all()
@@ -37,6 +45,9 @@ class CampaignViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['name', 'objective', 'template', 'schedule']
+    filterset_class = CampaignFilter
 
     def get_queryset(self):
             module = self.kwargs.get('module')
@@ -170,7 +181,12 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
 
 
+class TemplateFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(lookup_expr='icontains')  
 
+    class Meta:
+        model = Template
+        fields = ['name']
 
 class TemplateViewSet(viewsets.ModelViewSet):
     queryset = Template.objects.all()
@@ -179,6 +195,9 @@ class TemplateViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['name' ]
+    filterset_class = TemplateFilter
 
     def get_queryset(self):
       

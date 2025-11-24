@@ -16,8 +16,18 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
+from django_filters.rest_framework import DjangoFilterBackend
+import django_filters
 
+class CountryFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(lookup_expr='icontains') 
+    countryCode = django_filters.CharFilter(lookup_expr='icontains')  
+    MCC = django_filters.CharFilter(lookup_expr='icontains')  
+ 
 
+    class Meta:
+        model = Country
+        fields = ['name', 'countryCode', 'MCC']
 
 class CountryViewSet(viewsets.ModelViewSet):
     queryset = Country.objects.all()
@@ -25,6 +35,8 @@ class CountryViewSet(viewsets.ModelViewSet):
     # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = CountryFilter
 
     def get_queryset(self):
         if self.action == "list":
@@ -37,9 +49,7 @@ class CountryViewSet(viewsets.ModelViewSet):
         user = self.request.user
         check_permission(self, 'write', module)
         name=serializer.validated_data.get("name")
-        print("nam===============e",name)
         exist = Country.objects.filter(name__iexact=name, isDeleted=False)
-        print("exist===============e",exist)
 
         if exist.exists():
             raise ValidationError({"error": "Country with this name already exists."})
@@ -59,7 +69,15 @@ class CountryViewSet(viewsets.ModelViewSet):
         instance.save()
 
 
-
+class StateFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(lookup_expr='icontains') 
+    country_name = django_filters.CharFilter(
+        field_name='country__name',
+        lookup_expr='icontains'
+    )
+    class Meta:
+        model = State
+        fields = ['name', 'country_name']
 class StateViewSet(viewsets.ModelViewSet):
     queryset = State.objects.all()
     serializer_class = StateSerializer
@@ -67,6 +85,8 @@ class StateViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = StateFilter
 
 
     def get_queryset(self):
@@ -79,10 +99,8 @@ class StateViewSet(viewsets.ModelViewSet):
         module = self.kwargs.get('module')
         user = self.request.user
         check_permission(self, 'write', module)
-        country=serializer.validated_data.get("country")
-        print("nam===============e",country)
-        exist = State.objects.filter(country=country, isDeleted=False)
-        print("exist===============e",exist)
+        name=serializer.validated_data.get("name")
+        exist = State.objects.filter(name__iexact=name, isDeleted=False)
 
         if exist.exists():
             raise ValidationError({"error": "State for the selected country already exists."})
@@ -101,6 +119,15 @@ class StateViewSet(viewsets.ModelViewSet):
         instance.updatedBy = user
         instance.save()
 
+class CurrencyFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(lookup_expr='icontains') 
+    country_name = django_filters.CharFilter(
+        field_name='country__name',
+        lookup_expr='icontains'
+    )
+    class Meta:
+        model = Currency
+        fields = ['name', 'country_name']
 
 class CurrencyViewSet(viewsets.ModelViewSet):
     queryset = Currency.objects.all()
@@ -108,6 +135,9 @@ class CurrencyViewSet(viewsets.ModelViewSet):
     # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = CurrencyFilter
 
     def get_queryset(self):
         if self.action == "list":
@@ -139,12 +169,22 @@ class CurrencyViewSet(viewsets.ModelViewSet):
         instance.save()
 
 
+class EntityFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(lookup_expr='icontains') 
+
+    class Meta:
+        model = Entity
+        fields = ['name']
+
 class EntityViewSet(viewsets.ModelViewSet):
     queryset = Entity.objects.all()
     serializer_class = EntitySerializer
     # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = EntityFilter
 
     def get_queryset(self):
         if self.action == "list":
@@ -176,13 +216,22 @@ class EntityViewSet(viewsets.ModelViewSet):
         instance.save()
 
 
+class TimeZoneFilter(django_filters.FilterSet):
+    name = django_filters.CharFilter(lookup_expr='icontains') 
 
+    class Meta:
+        model = TimeZone
+        fields = ['name']
 class TimeZoneViewSet(viewsets.ModelViewSet):
     queryset = TimeZone.objects.all()
     serializer_class = TimeZoneSerializer
     # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = TimeZoneFilter
 
     def get_queryset(self):
         if self.action == "list":

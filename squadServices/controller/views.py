@@ -19,8 +19,18 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
+from django_filters.rest_framework import DjangoFilterBackend
+import django_filters
 
-
+class NavItemFilter(django_filters.FilterSet):
+    label = django_filters.CharFilter(lookup_expr='icontains')   
+    parent_label = django_filters.CharFilter(
+            field_name='parent__label',
+            lookup_expr='icontains'
+        )
+    class Meta:
+        model = NavItem
+        fields = ['label','parent_label']
 class NavItemViewSet(viewsets.ModelViewSet):
     queryset = NavItem.objects.all()
     serializer_class = NavItemSerializer
@@ -28,7 +38,8 @@ class NavItemViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = NavItemFilter
     def get_queryset(self):
         if self.action == "list":
             module = self.kwargs.get("module")
@@ -217,7 +228,6 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
 
 @api_view(["POST"])
 def sendMail(request):
-    print("-============", request.data.get("from_email"))
     subject = request.data.get("subject")
     message = request.data.get("content")
 
