@@ -8,7 +8,6 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from squad.utils.authenticators import JWTAuthentication
 from django.db import transaction
-from rest_framework.exceptions import ValidationError
 from django.utils.dateparse import parse_datetime 
 import openpyxl 
 from squadServices.helper.pagination import StandardResultsSetPagination
@@ -17,6 +16,7 @@ from squadServices.models.campaign import Campaign, CampaignContact, Template
 from squadServices.serializer.campaignSerializer import CampaignContactSerializer, CampaignSerializer, TemplateSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
+from rest_framework.exceptions import ValidationError
 
 def is_valid_contact(contact):
     return contact.isdigit() and 7 <= len(contact) <= 15
@@ -56,6 +56,13 @@ class CampaignViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            existingCampaign = Campaign.objects.filter(name__iexact=name, isDeleted=False)
+            if existingCampaign.exists():
+                raise ValidationError({"error": "Campaign with the same name already exists."})
+        
+
         serializer.save(updatedBy=self.request.user)
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
@@ -217,6 +224,11 @@ class TemplateViewSet(viewsets.ModelViewSet):
         module = self.kwargs.get('module')
         user = self.request.user
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            existingCampaign = Template.objects.filter(name__iexact=name, isDeleted=False)
+            if existingCampaign.exists():
+                raise ValidationError({"error": "Template with the same name already exists."})
         serializer.save(updatedBy=user)
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')

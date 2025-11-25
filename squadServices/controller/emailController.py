@@ -47,8 +47,14 @@ class EmailHostViewSet(viewsets.ModelViewSet):
         serializer.save(owner=user,createdBy=user, updatedBy=user)
 
     def perform_update(self, serializer):
+        name=serializer.validated_data.get("name")
         module = self.kwargs.get('module')
         check_permission(self, 'put', module)
+        if name != serializer.instance.name:
+            
+            exist = EmailHost.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "EmailHost with this name already exists."})
         user = self.request.user
         serializer.save(updatedBy=user)
     def perform_destroy(self, instance):
@@ -97,6 +103,11 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = EmailTemplate.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "EmailTemplate with the same name already exists."})
         user = self.request.user
         serializer.save(updatedBy=user)
     def perform_destroy(self, instance):

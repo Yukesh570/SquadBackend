@@ -70,6 +70,11 @@ class NavItemViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
         check_permission(self, "put", module)
+        label=serializer.validated_data.get("label")
+        if label != serializer.instance.label:
+            exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "NavItem with the same name already exists."})
         user = self.request.user
         serializer.save(updatedBy=user)
 

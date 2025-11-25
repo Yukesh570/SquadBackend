@@ -10,7 +10,7 @@ class ConnectivitySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Connectivity
-        fields = ['id', 'smppHost', 'smppPort','systemID','bindMode','sourceTON','sourceNPI','destTON','destNPI']
+        fields = ['id', 'smppHost', 'smppPort','systemID','bindMode','password','sourceTON','sourceNPI','destTON','destNPI','createdAt']
         extra_kwargs = {
             'smtp_password': {'write_only': True}
         } 

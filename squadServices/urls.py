@@ -10,6 +10,8 @@ from django.urls import path
 
 from squadServices.controller.campaignController import CampaignContactViewSet, CampaignViewSet, TemplateViewSet
 from squadServices.controller.companyController import CompanyCategoryViewSet, CompanyStatusViewSet, CompanyViewSet
+from squadServices.controller.connnectivity.connectivityController import ConnectivityViewSet
+from squadServices.controller.connnectivity.vendorController import VendorViewSet
 from squadServices.controller.countryController import CountryViewSet, CurrencyViewSet, EntityViewSet, StateViewSet, TimeZoneViewSet
 from squadServices.controller.emailController import (
     EmailHostViewSet,
@@ -184,6 +186,48 @@ urlpatterns = [
             }
         ),
         name="emailHost",
+    ),
+    path(
+        "connectivity/<str:module>/",
+        ConnectivityViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="connectivity",
+    ),
+    path(
+        "connectivity/<str:module>/<int:pk>/",
+        ConnectivityViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="connectivity",
+    ),
+    path(
+        "vendor/<str:module>/",
+        VendorViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="vendor",
+    ),
+    path(
+        "vendor/<str:module>/<int:pk>/",
+        VendorViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="vendor",
     ),
     path(
         "country/<str:module>/",

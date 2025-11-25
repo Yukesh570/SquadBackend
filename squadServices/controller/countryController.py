@@ -8,11 +8,8 @@ from squadServices.helper.csvDownloadHelper import start_csv_export
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
-from squadServices.models.navItem import NavItem
 from squadServices.serializer.countrySerializer import CountrySerializer, CurrencySerializer, EntitySerializer, StateSerializer, TimeZoneSerializer
-from squadServices.serializer.navSerializer import (
-    NavItemSerializer,
-)
+
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.decorators import api_view
@@ -58,8 +55,13 @@ class CountryViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+
+        if name != serializer.instance.name:
+            exist = Country.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "Country with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
@@ -121,8 +123,12 @@ class StateViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = State.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "State with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
@@ -170,8 +176,12 @@ class CurrencyViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = Currency.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "Currency with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
@@ -217,8 +227,12 @@ class EntityViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = Entity.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "Entity with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
@@ -264,8 +278,12 @@ class TimeZoneViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = TimeZone.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "TimeZone with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')

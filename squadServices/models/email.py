@@ -20,9 +20,7 @@ class EmailHost(models.Model):
     updatedAt = models.DateTimeField(auto_now=True)
     def __str__(self):
         return self.name
-    
-    class Meta:
-        unique_together = ('smtpHost', 'smtpUser') 
+
 
 
 class EmailTemplate(models.Model):

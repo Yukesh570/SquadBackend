@@ -56,8 +56,12 @@ class CompanyCategoryViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = CompanyCategory.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "CompanyCategory with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
@@ -95,18 +99,19 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
         user = self.request.user
         check_permission(self, 'write', module)
         name=serializer.validated_data.get("name")
-        print("nam===============e",name)
         exist = CompanyStatus.objects.filter(name__iexact=name, isDeleted=False)
-        print("exist===============e",exist)
-
         if exist.exists():
             raise ValidationError({"error": "CompanyStatus with this name already exists."})
         serializer.save(createdBy=user, updatedBy=user) 
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = CompanyStatus.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "CompanyStatus with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')
@@ -205,8 +210,12 @@ class CompanyViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         module = self.kwargs.get('module')
         user = self.request.user
-
         check_permission(self, 'put', module)
+        name=serializer.validated_data.get("name")
+        if name != serializer.instance.name:
+            exist = Company.objects.filter(name__iexact=name, isDeleted=False)
+            if exist.exists():
+                raise ValidationError({"error": "Company with the same name already exists."})
         serializer.save( updatedBy=user) 
     def perform_destroy(self, instance):
         module = self.kwargs.get('module')

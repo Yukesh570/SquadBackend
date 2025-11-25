@@ -7,7 +7,7 @@ from rest_framework import serializers
 
 
 class VendorSerializer(serializers.ModelSerializer):
-    countryName = serializers.CharField(source='country.name', read_only=True)
+    companyName = serializers.CharField(source='company.name', read_only=True)
 
     class Meta:
         model = Vendor

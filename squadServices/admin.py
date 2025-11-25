@@ -63,7 +63,7 @@ class EmailTemplateAdmin(admin.ModelAdmin):
 
 class EmailHostAdmin(admin.ModelAdmin):
     model = EmailHost
-    list_display = ("id","name", "smtpHost", "smtpPort", "smtpUser", "smtpPassword", "security")
+    list_display = ("id","name", "smtpHost", "smtpPort", "smtpUser", "isDeleted","smtpPassword", "security")
     search_fields = ("name","smtpHost", "smtpUser")
     readonly_fields = ("createdAt", "updatedAt")
 
