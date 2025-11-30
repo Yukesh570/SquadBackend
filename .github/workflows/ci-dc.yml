@@ -1,0 +1,70 @@
+name: CI/CD Deploy Django Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-Backend:
+    runs-on: ubuntu-latest
+
+    env:
+      REMOTE_DIR: ${{ secrets.REMOTE_APP_DIR }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa 
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p ${{ env.SSH_PORT }} ${{ env.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sync Django files (rsync project/)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync
+          /usr/bin/rsync -avz --delete \
+            --exclude 'venv/' \
+            --exclude '__pycache__/' \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            ./ ${{ env.SSH_USER }}@${{ env.SSH_HOST }}:${{ env.REMOTE_DIR }}/
+
+      - name: SSH → Deploy Django + Celery + RabbitMQ
+        run: |
+          ssh -p ${{ env.SSH_PORT }} ${{ env.SSH_USER }}@${{ env.SSH_HOST }} << EOF
+            cd "${REMOTE_DIR}"
+            echo "--- Deploying Squad Backend ---"
+            
+            # Stop existing stack
+            docker compose -f docker-compose-backend.yml down || true
+            
+            # Rebuild & start (Django + Celery + Postgres + RabbitMQ)
+            docker compose -f docker-compose-backend.yml up -d --build --remove-orphans
+            
+            # Wait for services to be healthy
+            sleep 10
+            
+            # Run Django migrations
+            docker compose -f docker-compose-backend.yml exec -T web python manage.py migrate
+            
+            # Collect static files (CSS/JS)
+            docker compose -f docker-compose-backend.yml exec -T web python manage.py collectstatic --noinput
+            
+            # Clean up old images
+            docker image prune -f
+            
+            echo "Django Backend deployment complete!"
+            docker compose -f docker-compose-backend.yml ps
+            echo "API: http://${SSH_HOST}:8000"
+          EOF
+
+      - name: Success
+        run: echo "Backend CI/CD completed! http://${{ env.SSH_HOST }}:8000"

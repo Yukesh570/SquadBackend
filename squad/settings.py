@@ -41,7 +41,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'drf_spectacular',
-
+    'whitenoise.runserver_nostatic',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -56,6 +56,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 MIDDLEWARE = [
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -120,7 +121,7 @@ DATABASES = {
         'NAME': 'sms',
         'USER': 'yukesh',
         'PASSWORD': 'android18)',
-        'HOST': 'localhost',  # or the container name if using Docker
+        'HOST': 'squad-postgres',  # or the container name if using Docker
         'PORT': '5432',
     }
 }
@@ -179,6 +180,7 @@ AUTH_USER_MODEL = 'squadServices.User'
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = '/app/staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
