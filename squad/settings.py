@@ -116,13 +116,14 @@ WSGI_APPLICATION = 'squad.wsgi.application'
 # }
 
 DATABASES = {
+   
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'sms',
-        'USER': 'yukesh',
-        'PASSWORD': 'android18)',
-        'HOST': 'squad-postgres',  # or the container name if using Docker
-        'PORT': '5432',
+        'NAME': os.getenv('POSTGRES_DB'),
+        'USER': os.getenv('POSTGRES_USER'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
+        'HOST': os.getenv('POSTGRES_HOST'),      # or 'squad-postgres'
+        'PORT': os.getenv('POSTGRES_PORT'),
     }
 }
 
