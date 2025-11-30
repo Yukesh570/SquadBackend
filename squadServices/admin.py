@@ -125,7 +125,6 @@ class companyAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
-
 class connectivityAdmin(admin.ModelAdmin):
     model = Connectivity
     list_display = ("id","smppHost", "smppPort", "systemID", "isDeleted", "createdAt", "updatedAt")
