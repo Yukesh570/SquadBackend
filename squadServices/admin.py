@@ -55,6 +55,7 @@ class TemplateAdmin(admin.ModelAdmin):
     list_display = ("id","name")
     readonly_fields = ("createdAt", "updatedAt")
 
+
 class EmailTemplateAdmin(admin.ModelAdmin):
     model = EmailTemplate
     list_display = ("id","name")
