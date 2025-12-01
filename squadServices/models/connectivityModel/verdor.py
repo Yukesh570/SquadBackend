@@ -5,27 +5,38 @@ from squadServices.models.company import Company
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 
 CONNECTION_TYPE_CHOICES = [
-        ('SMPP', 'SMPP'),
-        ('HTTP', 'HTTP'),
-    ]
+    ("SMPP", "SMPP"),
+    ("HTTP", "HTTP"),
+]
 
 
 class Vendor(models.Model):
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='company')
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="company"
+    )
 
     profileName = models.CharField(max_length=255)
     connectionType = models.CharField(
         max_length=4,
         choices=CONNECTION_TYPE_CHOICES,
-        default='SMPP',
-        verbose_name="connection type"
+        default="SMPP",
+        verbose_name="connection type",
     )
     isDeleted = models.BooleanField(default=False)
-    createdBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='vendor_created')
+    createdBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="vendor_created",
+    )
     createdAt = models.DateTimeField(auto_now_add=True)
-    updatedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='vendor_updated')
+    updatedBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="vendor_updated",
+    )
     updatedAt = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.profileName
-    

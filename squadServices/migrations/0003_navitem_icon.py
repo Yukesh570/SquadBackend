@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('squadServices', '0002_navitem'),
+        ("squadServices", "0002_navitem"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='navitem',
-            name='icon',
-            field=models.CharField(default='Home', max_length=50),
+            model_name="navitem",
+            name="icon",
+            field=models.CharField(default="Home", max_length=50),
         ),
     ]

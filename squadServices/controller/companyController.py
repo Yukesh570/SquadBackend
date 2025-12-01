@@ -9,7 +9,11 @@ from squadServices.helper.csvDownloadHelper import start_csv_export
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
-from squadServices.serializer.companySerializer import CompanyCategorySerializer, CompanySerializer, CompanyStatusSerializer
+from squadServices.serializer.companySerializer import (
+    CompanyCategorySerializer,
+    CompanySerializer,
+    CompanyStatusSerializer,
+)
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
@@ -21,12 +25,14 @@ from django.http import StreamingHttpResponse
 
 import csv
 
+
 class CompanyCategoryFilter(django_filters.FilterSet):
-    name = django_filters.CharFilter(lookup_expr='icontains')  
+    name = django_filters.CharFilter(lookup_expr="icontains")
 
     class Meta:
         model = CompanyCategory
-        fields = ['name']
+        fields = ["name"]
+
 
 class CompanyCategoryViewSet(viewsets.ModelViewSet):
     queryset = CompanyCategory.objects.all()
@@ -40,43 +46,51 @@ class CompanyCategoryViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         if self.action == "list":
-            module = self.kwargs.get('module')
-            check_permission(self, 'read', module)
+            module = self.kwargs.get("module")
+            check_permission(self, "read", module)
             return CompanyCategory.objects.filter(isDeleted=False)
         return super().get_queryset()
+
     def perform_create(self, serializer):
-        module = self.kwargs.get('module')
+        module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, 'write', module)
-        name=serializer.validated_data.get("name")
+        check_permission(self, "write", module)
+        name = serializer.validated_data.get("name")
         exist = CompanyCategory.objects.filter(name__iexact=name, isDeleted=False)
         if exist.exists():
-            raise ValidationError({"error": "CompanyCategory with this name already exists."})
-        serializer.save(createdBy=user, updatedBy=user) 
+            raise ValidationError(
+                {"error": "CompanyCategory with this name already exists."}
+            )
+        serializer.save(createdBy=user, updatedBy=user)
+
     def perform_update(self, serializer):
-        module = self.kwargs.get('module')
+        module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, 'put', module)
-        name=serializer.validated_data.get("name")
+        check_permission(self, "put", module)
+        name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
             exist = CompanyCategory.objects.filter(name__iexact=name, isDeleted=False)
             if exist.exists():
-                raise ValidationError({"error": "CompanyCategory with the same name already exists."})
-        serializer.save( updatedBy=user) 
+                raise ValidationError(
+                    {"error": "CompanyCategory with the same name already exists."}
+                )
+        serializer.save(updatedBy=user)
+
     def perform_destroy(self, instance):
-        module = self.kwargs.get('module')
-        check_permission(self, 'delete', module)
+        module = self.kwargs.get("module")
+        check_permission(self, "delete", module)
         user = self.request.user
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
 
+
 class CompanyStatusFilter(django_filters.FilterSet):
-    name = django_filters.CharFilter(lookup_expr='icontains')  
+    name = django_filters.CharFilter(lookup_expr="icontains")
 
     class Meta:
         model = CompanyStatus
-        fields = ['name']
+        fields = ["name"]
 
 
 class CompanyStatusViewSet(viewsets.ModelViewSet):
@@ -88,34 +102,42 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = CompanyStatusFilter
+
     def get_queryset(self):
         if self.action == "list":
-            module = self.kwargs.get('module')
-            check_permission(self, 'read', module)
+            module = self.kwargs.get("module")
+            check_permission(self, "read", module)
             return CompanyStatus.objects.filter(isDeleted=False)
         return super().get_queryset()
+
     def perform_create(self, serializer):
-        module = self.kwargs.get('module')
+        module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, 'write', module)
-        name=serializer.validated_data.get("name")
+        check_permission(self, "write", module)
+        name = serializer.validated_data.get("name")
         exist = CompanyStatus.objects.filter(name__iexact=name, isDeleted=False)
         if exist.exists():
-            raise ValidationError({"error": "CompanyStatus with this name already exists."})
-        serializer.save(createdBy=user, updatedBy=user) 
+            raise ValidationError(
+                {"error": "CompanyStatus with this name already exists."}
+            )
+        serializer.save(createdBy=user, updatedBy=user)
+
     def perform_update(self, serializer):
-        module = self.kwargs.get('module')
+        module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, 'put', module)
-        name=serializer.validated_data.get("name")
+        check_permission(self, "put", module)
+        name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
             exist = CompanyStatus.objects.filter(name__iexact=name, isDeleted=False)
             if exist.exists():
-                raise ValidationError({"error": "CompanyStatus with the same name already exists."})
-        serializer.save( updatedBy=user) 
+                raise ValidationError(
+                    {"error": "CompanyStatus with the same name already exists."}
+                )
+        serializer.save(updatedBy=user)
+
     def perform_destroy(self, instance):
-        module = self.kwargs.get('module')
-        check_permission(self, 'delete', module)
+        module = self.kwargs.get("module")
+        check_permission(self, "delete", module)
         user = self.request.user
         instance.isDeleted = True
         instance.updatedBy = user
@@ -123,45 +145,40 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
 
 
 class CompanyFilter(django_filters.FilterSet):
-    name = django_filters.CharFilter(lookup_expr='icontains')  
-    shortName = django_filters.CharFilter(lookup_expr='icontains')  
-    phone = django_filters.CharFilter(lookup_expr='icontains')  
-    companyEmail = django_filters.CharFilter(lookup_expr='icontains')  
-    supportEmail = django_filters.CharFilter(lookup_expr='icontains')  
-    billingEmail = django_filters.CharFilter(lookup_expr='icontains')  
-    ratesEmail = django_filters.CharFilter(lookup_expr='icontains')  
-    lowBalanceAlertEmail = django_filters.CharFilter(lookup_expr='icontains')  
- 
+    name = django_filters.CharFilter(lookup_expr="icontains")
+    shortName = django_filters.CharFilter(lookup_expr="icontains")
+    phone = django_filters.CharFilter(lookup_expr="icontains")
+    companyEmail = django_filters.CharFilter(lookup_expr="icontains")
+    supportEmail = django_filters.CharFilter(lookup_expr="icontains")
+    billingEmail = django_filters.CharFilter(lookup_expr="icontains")
+    ratesEmail = django_filters.CharFilter(lookup_expr="icontains")
+    lowBalanceAlertEmail = django_filters.CharFilter(lookup_expr="icontains")
+
     category_name = django_filters.CharFilter(
-        field_name='category__name',
-        lookup_expr='icontains'
+        field_name="category__name", lookup_expr="icontains"
     )
     status_name = django_filters.CharFilter(
-        field_name='status__name',
-        lookup_expr='icontains'
+        field_name="status__name", lookup_expr="icontains"
     )
     currency_name = django_filters.CharFilter(
-        field_name='currency__name',
-        lookup_expr='icontains'
+        field_name="currency__name", lookup_expr="icontains"
     )
     timeZone_name = django_filters.CharFilter(
-        field_name='timeZone__name',
-        lookup_expr='icontains'
+        field_name="timeZone__name", lookup_expr="icontains"
     )
     businessEntity = django_filters.CharFilter(
-        field_name='businessEntity__name',
-        lookup_expr='icontains'
+        field_name="businessEntity__name", lookup_expr="icontains"
     )
     customerCreditLimit = django_filters.NumberFilter()
 
     vendorCreditLimit = django_filters.NumberFilter()
     balanceAlertAmount = django_filters.NumberFilter()
-    referencNumber = django_filters.CharFilter(lookup_expr='icontains')  
-    vatNumber = django_filters.CharFilter(lookup_expr='icontains') 
-    address = django_filters.CharFilter(lookup_expr='icontains') 
-    validityPeriod = django_filters.CharFilter(lookup_expr='icontains')  
-    defaultEmail = django_filters.CharFilter(lookup_expr='icontains') 
-    onlinePayment= django_filters.BooleanFilter()
+    referencNumber = django_filters.CharFilter(lookup_expr="icontains")
+    vatNumber = django_filters.CharFilter(lookup_expr="icontains")
+    address = django_filters.CharFilter(lookup_expr="icontains")
+    validityPeriod = django_filters.CharFilter(lookup_expr="icontains")
+    defaultEmail = django_filters.CharFilter(lookup_expr="icontains")
+    onlinePayment = django_filters.BooleanFilter()
     companyBlocked = django_filters.BooleanFilter()
     allowWhiteListedCards = django_filters.BooleanFilter()
     sendDailyReports = django_filters.BooleanFilter()
@@ -170,17 +187,39 @@ class CompanyFilter(django_filters.FilterSet):
     showHlrApi = django_filters.BooleanFilter()
     enableVendorPanel = django_filters.BooleanFilter()
 
-
-
     class Meta:
         model = Company
-        fields = ['name', 'shortName', 'phone', 'companyEmail', 'supportEmail', 'billingEmail', 'ratesEmail', 'lowBalanceAlertEmail',
-                  'category_name', 'status_name', 'currency_name', 'timeZone_name', 'businessEntity', 'customerCreditLimit', 'vendorCreditLimit',
-                  'balanceAlertAmount', 'referencNumber', 'vatNumber', 'address', 'validityPeriod', 'defaultEmail', 'onlinePayment', 'companyBlocked',
-                  'allowWhiteListedCards', 'sendDailyReports', 'allowNetting', 'sendMonthlyReports', 'showHlrApi', 'enableVendorPanel']
-
-
-
+        fields = [
+            "name",
+            "shortName",
+            "phone",
+            "companyEmail",
+            "supportEmail",
+            "billingEmail",
+            "ratesEmail",
+            "lowBalanceAlertEmail",
+            "category_name",
+            "status_name",
+            "currency_name",
+            "timeZone_name",
+            "businessEntity",
+            "customerCreditLimit",
+            "vendorCreditLimit",
+            "balanceAlertAmount",
+            "referencNumber",
+            "vatNumber",
+            "address",
+            "validityPeriod",
+            "defaultEmail",
+            "onlinePayment",
+            "companyBlocked",
+            "allowWhiteListedCards",
+            "sendDailyReports",
+            "allowNetting",
+            "sendMonthlyReports",
+            "showHlrApi",
+            "enableVendorPanel",
+        ]
 
 
 class CompanyViewSet(viewsets.ModelViewSet):
@@ -191,54 +230,71 @@ class CompanyViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = CompanyFilter
+
     def get_queryset(self):
         if self.action == "list":
-            module = self.kwargs.get('module')
-            check_permission(self, 'read', module)
+            module = self.kwargs.get("module")
+            check_permission(self, "read", module)
             return Company.objects.filter(isDeleted=False)
         return super().get_queryset()
+
     def perform_create(self, serializer):
-        module = self.kwargs.get('module')
+        module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, 'write', module)
-        name=serializer.validated_data.get("name")
+        check_permission(self, "write", module)
+        name = serializer.validated_data.get("name")
         exist = Company.objects.filter(name__iexact=name, isDeleted=False)
 
         if exist.exists():
             raise ValidationError({"error": "Company with this name already exists."})
-        serializer.save(createdBy=user, updatedBy=user) 
+        serializer.save(createdBy=user, updatedBy=user)
+
     def perform_update(self, serializer):
-        module = self.kwargs.get('module')
+        module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, 'put', module)
-        name=serializer.validated_data.get("name")
+        check_permission(self, "put", module)
+        name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
             exist = Company.objects.filter(name__iexact=name, isDeleted=False)
             if exist.exists():
-                raise ValidationError({"error": "Company with the same name already exists."})
-        serializer.save( updatedBy=user) 
+                raise ValidationError(
+                    {"error": "Company with the same name already exists."}
+                )
+        serializer.save(updatedBy=user)
+
     def perform_destroy(self, instance):
-        module = self.kwargs.get('module')
-        check_permission(self, 'delete', module)
+        module = self.kwargs.get("module")
+        check_permission(self, "delete", module)
         user = self.request.user
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-    
-    @action(detail=False, methods=['get'], url_path="downloadCsv")
+
+    @action(detail=False, methods=["get"], url_path="downloadCsv")
     def csv(self, request, module=None):
-        module = self.kwargs.get('module')
-        check_permission(self, 'read', module)
+        module = self.kwargs.get("module")
+        check_permission(self, "read", module)
         filtered_qs = self.filter_queryset(self.get_queryset())
-        filter_dict = getattr(getattr(filtered_qs.query, 'where', None), 'children', [])
-        return start_csv_export(self, request, 
-                                module,
-                                model_name="squadServices.Company",
-                                fields=["id","name","shortName","phone","companyEmail","supportEmail",
-                                                        "billingEmail","ratesEmail","lowBalanceAlertEmail",],
-                                filter_dict=filter_dict,)
-   
-        
+        filter_dict = getattr(getattr(filtered_qs.query, "where", None), "children", [])
+        return start_csv_export(
+            self,
+            request,
+            module,
+            model_name="squadServices.Company",
+            fields=[
+                "id",
+                "name",
+                "shortName",
+                "phone",
+                "companyEmail",
+                "supportEmail",
+                "billingEmail",
+                "ratesEmail",
+                "lowBalanceAlertEmail",
+            ],
+            filter_dict=filter_dict,
+        )
+
     # @action(detail=False, methods=['get'], url_path="downloadCsv")
     # def start_csv_export(self, request, module=None):
     #     module = self.kwargs.get('module')
@@ -246,7 +302,6 @@ class CompanyViewSet(viewsets.ModelViewSet):
 
     #     # Apply filters the same way DRF FilterSet does
     #     filtered_qs = self.filter_queryset(self.get_queryset())
-  
 
     #     # Convert queryset filters into simple filter dict
     #     # (primary columns only – complex filters need customizing)

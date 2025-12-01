@@ -3,10 +3,10 @@ from django.db import models
 
 
 BIND_MODE_CHOICES = [
-        ('TRANSMITTER', 'transmitter'),
-        ('RECEIVER', 'receiver'),
-        ('TRANSCEIVER', 'transceiver'),
-    ]
+    ("TRANSMITTER", "transmitter"),
+    ("RECEIVER", "receiver"),
+    ("TRANSCEIVER", "transceiver"),
+]
 
 
 class Connectivity(models.Model):
@@ -17,18 +17,27 @@ class Connectivity(models.Model):
     bindMode = models.CharField(
         max_length=11,
         choices=BIND_MODE_CHOICES,
-        default='TRANSMITTER',
+        default="TRANSMITTER",
     )
     sourceTON = models.IntegerField()
     destTON = models.IntegerField()
     sourceNPI = models.IntegerField()
     destNPI = models.IntegerField()
     isDeleted = models.BooleanField(default=False)
-    createdBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='connectivity_created')
+    createdBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="connectivity_created",
+    )
     createdAt = models.DateTimeField(auto_now_add=True)
-    updatedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='connectivity_updated')
+    updatedBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="connectivity_updated",
+    )
     updatedAt = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.smppHost
-    

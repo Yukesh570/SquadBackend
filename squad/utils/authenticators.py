@@ -11,8 +11,6 @@ from rest_framework.request import Request
 from squadServices.models.users import User
 
 
-
-
 class JWTAuthentication(BaseAuthentication):
     """
     JWT based authentication class

@@ -1,8 +1,6 @@
-
-from squadServices.models.connectivity.connectivity import Connectivity
+from squadServices.models.connectivityModel.connectivity import Connectivity
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from rest_framework import serializers
-
 
 
 class ConnectivitySerializer(serializers.ModelSerializer):
@@ -10,7 +8,17 @@ class ConnectivitySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Connectivity
-        fields = ['id', 'smppHost', 'smppPort','systemID','bindMode','password','sourceTON','sourceNPI','destTON','destNPI','createdAt']
-        extra_kwargs = {
-            'smtp_password': {'write_only': True}
-        } 
+        fields = [
+            "id",
+            "smppHost",
+            "smppPort",
+            "systemID",
+            "bindMode",
+            "password",
+            "sourceTON",
+            "sourceNPI",
+            "destTON",
+            "destNPI",
+            "createdAt",
+        ]
+        # extra_kwargs = {"password": {"write_only": True}}

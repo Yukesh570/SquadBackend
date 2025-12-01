@@ -20,39 +20,43 @@ class RegisterView(generics.CreateAPIView):
 class LoginView(generics.GenericAPIView):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
+
     def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
+        username = request.data.get("username")
+        password = request.data.get("password")
 
         user = authenticate(username=username, password=password)
 
         if user is None:
-            return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED
+            )
 
         token = create_jwt_token(user)
-        return Response({
-            "token": token,
-            "user": UserSerializer(user).data
-        })
-
+        return Response({"token": token, "user": UserSerializer(user).data})
 
 
 class ChangePasswordView(generics.GenericAPIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def post (self,request):
+    def post(self, request):
         user = request.user
-        oldPassword = request.data.get('oldPassword')
-        newPassword = request.data.get('newPassword')
+        oldPassword = request.data.get("oldPassword")
+        newPassword = request.data.get("newPassword")
 
         if not user.check_password(oldPassword):
-            return Response({"detail": "Old password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Old password is incorrect."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         user.set_password(newPassword)
         user.save()
 
-        return Response({"detail": "Password changed successfully."}, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "Password changed successfully."}, status=status.HTTP_200_OK
+        )
 
 
 class EditUserView(generics.GenericAPIView):
@@ -60,20 +64,23 @@ class EditUserView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
 
-    def patch(self,request,pk):
+    def patch(self, request, pk):
         try:
-            user=User.objects.get(id=pk)
+            user = User.objects.get(id=pk)
         except User.DoesNotExist:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND
+            )
 
         if request.user.userType != "ADMIN" and request.user.id != user.id:
-            return Response({"detail": "You are not authorized to edit this user."}, status=status.HTTP_403_FORBIDDEN)
-        serializer= self.get_serializer(user,data=request.data,partial=True)
+            return Response(
+                {"detail": "You are not authorized to edit this user."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = self.get_serializer(user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response({"detail": "User updated successfully.", "user": serializer.data}, status=status.HTTP_200_OK)
-
-
-
-
-   
+        return Response(
+            {"detail": "User updated successfully.", "user": serializer.data},
+            status=status.HTTP_200_OK,
+        )

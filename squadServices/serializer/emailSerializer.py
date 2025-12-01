@@ -7,12 +7,19 @@ from django.db import IntegrityError
 class EmailHostSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmailHost
-        fields = ['id', 'name', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpPassword', 'security']
-        extra_kwargs = {
-            'smtp_password': {'write_only': True}
-        }
-    
+        fields = [
+            "id",
+            "name",
+            "smtpHost",
+            "smtpPort",
+            "smtpUser",
+            "smtpPassword",
+            "security",
+        ]
+        extra_kwargs = {"smtpPassword": {"write_only": True}}
+
+
 class EmailTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmailTemplate
-        fields = ['id', 'name', 'content']
+        fields = ["id", "name", "content"]

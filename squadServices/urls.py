@@ -8,11 +8,28 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import path
 
-from squadServices.controller.campaignController import CampaignContactViewSet, CampaignViewSet, TemplateViewSet
-from squadServices.controller.companyController import CompanyCategoryViewSet, CompanyStatusViewSet, CompanyViewSet
-from squadServices.controller.connnectivity.connectivityController import ConnectivityViewSet
+from squadServices.controller.campaignController import (
+    CampaignContactViewSet,
+    CampaignViewSet,
+    TemplateViewSet,
+)
+from squadServices.controller.clientController.clientController import ClientViewSet
+from squadServices.controller.companyController import (
+    CompanyCategoryViewSet,
+    CompanyStatusViewSet,
+    CompanyViewSet,
+)
+from squadServices.controller.connnectivity.connectivityController import (
+    ConnectivityViewSet,
+)
 from squadServices.controller.connnectivity.vendorController import VendorViewSet
-from squadServices.controller.countryController import CountryViewSet, CurrencyViewSet, EntityViewSet, StateViewSet, TimeZoneViewSet
+from squadServices.controller.countryController import (
+    CountryViewSet,
+    CurrencyViewSet,
+    EntityViewSet,
+    StateViewSet,
+    TimeZoneViewSet,
+)
 from squadServices.controller.emailController import (
     EmailHostViewSet,
     EmailTemplateViewSet,
@@ -118,10 +135,9 @@ urlpatterns = [
         ),
         name="campaign",
     ),
- 
     path(
         "campaignContact/<str:module>/<int:pk>/",
-        CampaignContactViewSet.as_view({ "get": "list"}),
+        CampaignContactViewSet.as_view({"get": "list"}),
         name="campaignContact",
     ),
     path(
@@ -230,19 +246,39 @@ urlpatterns = [
         name="vendor",
     ),
     path(
+        "client/<str:module>/",
+        ClientViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="client",
+    ),
+    path(
+        "client/<str:module>/<int:pk>/",
+        ClientViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="client",
+    ),
+    path(
         "country/<str:module>/",
         CountryViewSet.as_view(
             {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
         "country/<str:module>/<int:pk>/",
         CountryViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
@@ -252,39 +288,35 @@ urlpatterns = [
     path(
         "state/<str:module>/",
         StateViewSet.as_view(
-              {
+            {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
         "state/<str:module>/<int:pk>/",
         StateViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
             }
         ),
     ),
-
-    
     path(
         "currency/<str:module>/",
         CurrencyViewSet.as_view(
-              {
+            {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
         "currency/<str:module>/<int:pk>/",
         CurrencyViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
@@ -294,17 +326,16 @@ urlpatterns = [
     path(
         "entity/<str:module>/",
         EntityViewSet.as_view(
-              {
+            {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
         "entity/<str:module>/<int:pk>/",
         EntityViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
@@ -314,17 +345,16 @@ urlpatterns = [
     path(
         "timeZone/<str:module>/",
         TimeZoneViewSet.as_view(
-              {
+            {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
         "timeZone/<str:module>/<int:pk>/",
         TimeZoneViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
@@ -334,17 +364,16 @@ urlpatterns = [
     path(
         "companyCategory/<str:module>/",
         CompanyCategoryViewSet.as_view(
-              {
+            {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
         "companyCategory/<str:module>/<int:pk>/",
         CompanyCategoryViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
@@ -354,17 +383,16 @@ urlpatterns = [
     path(
         "companyStatus/<str:module>/",
         CompanyStatusViewSet.as_view(
-              {
+            {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
         "companyStatus/<str:module>/<int:pk>/",
         CompanyStatusViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
@@ -374,37 +402,39 @@ urlpatterns = [
     path(
         "company/<str:module>/",
         CompanyViewSet.as_view(
-              {
+            {
                 "get": "list",
                 "post": "create",
-
             }
         ),
     ),
     path(
-    "company/downloadCsv/<str:module>/",
-    CompanyViewSet.as_view({"get": "csv"}),
-),
- path(
-    "country/downloadCsv/<str:module>/",
-    CountryViewSet.as_view({"get": "csv"}),
-),
+        "company/downloadCsv/<str:module>/",
+        CompanyViewSet.as_view({"get": "csv"}),
+    ),
     path(
-    "csv-status/<str:module>/",
-    csv_status,
-),
-    path("download-file/<str:module>/<str:filename>/", download_file, name="download-file"),
+        "country/downloadCsv/<str:module>/",
+        CountryViewSet.as_view({"get": "csv"}),
+    ),
+    path(
+        "csv-status/<str:module>/",
+        csv_status,
+    ),
+    path(
+        "download-file/<str:module>/<str:filename>/",
+        download_file,
+        name="download-file",
+    ),
     path(
         "company/<str:module>/<int:pk>/",
         CompanyViewSet.as_view(
-              {
+            {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
             }
         ),
     ),
-
 ]
 
 

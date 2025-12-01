@@ -6,18 +6,26 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('squadServices', '0001_initial'),
+        ("squadServices", "0001_initial"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='NavItem',
+            name="NavItem",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('label', models.CharField(max_length=50)),
-                ('url', models.CharField(max_length=200)),
-                ('order', models.IntegerField(default=0)),
-                ('is_active', models.BooleanField(default=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("label", models.CharField(max_length=50)),
+                ("url", models.CharField(max_length=200)),
+                ("order", models.IntegerField(default=0)),
+                ("is_active", models.BooleanField(default=True)),
             ],
         ),
     ]

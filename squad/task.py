@@ -14,7 +14,9 @@ import uuid
 
 
 @shared_task
-def sendEmailTask(subject, message, fromEmail, recipientList, emailHostId,attachments=None):
+def sendEmailTask(
+    subject, message, fromEmail, recipientList, emailHostId, attachments=None
+):
     try:
         emailHost = EmailHost.objects.get(pk=emailHostId, isDeleted=False)
     except EmailHost.DoesNotExist:
@@ -36,7 +38,7 @@ def sendEmailTask(subject, message, fromEmail, recipientList, emailHostId,attach
             use_ssl=True,
         )
     email = EmailMultiAlternatives(
-        subject = subject + "\u200B",
+        subject=subject + "\u200b",
         body=message,
         from_email=fromEmail,
         to=recipientList,
@@ -62,8 +64,8 @@ def sendEmailTask(subject, message, fromEmail, recipientList, emailHostId,attach
 
             email.attach(file_name, file_content, mime_type)
 
-
     email.send()
+
 
 @shared_task
 def export_model_csv(model_name: str, filters=None, fields=None, module=None):
@@ -77,13 +79,19 @@ def export_model_csv(model_name: str, filters=None, fields=None, module=None):
         return f"Model {model_name} not found"
 
     # Generate unique filename
-    filename = f"{module or Model._meta.model_name}_{uuid.uuid4().hex}_{int(time())}.csv"
+    filename = (
+        f"{module or Model._meta.model_name}_{uuid.uuid4().hex}_{int(time())}.csv"
+    )
     export_dir = os.path.join(settings.MEDIA_ROOT, "exports")
     os.makedirs(export_dir, exist_ok=True)
     filepath = os.path.join(export_dir, filename)
 
     # Base queryset
-    queryset = Model.objects.filter(isDeleted=False) if hasattr(Model, 'isDeleted') else Model.objects.all()
+    queryset = (
+        Model.objects.filter(isDeleted=False)
+        if hasattr(Model, "isDeleted")
+        else Model.objects.all()
+    )
 
     # Apply filters
     if filters:
@@ -99,7 +107,10 @@ def export_model_csv(model_name: str, filters=None, fields=None, module=None):
         writer = csv.writer(f)
         writer.writerow(fields)
         for obj in queryset.iterator(chunk_size=2000):
-            row = [getattr(obj, f, getattr(getattr(obj, f, ""), "name", "")) for f in fields]
+            row = [
+                getattr(obj, f, getattr(getattr(obj, f, ""), "name", ""))
+                for f in fields
+            ]
             writer.writerow(row)
 
     # Schedule deletion after 5 minutes

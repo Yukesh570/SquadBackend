@@ -2,34 +2,59 @@
 from rest_framework import serializers
 from squadServices.models.navItem import NavItem, NavUserRelation
 
+
 class NavItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = NavItem
-        fields = ['id', 'label', 'url', 'parent','order', 'is_active', 'icon']
+        fields = ["id", "label", "url", "parent", "order", "is_active", "icon"]
+
 
 class NavUserRelationSerializer(serializers.ModelSerializer):
-    navigateId = NavItemSerializer(read_only=True)  
+    navigateId = NavItemSerializer(read_only=True)
 
     class Meta:
         model = NavUserRelation
-        fields = ['id', 'userType', 'navigateId', 'read', 'write', 'delete', 'put',]
+        fields = [
+            "id",
+            "userType",
+            "navigateId",
+            "read",
+            "write",
+            "delete",
+            "put",
+        ]
+
 
 class GetSerializer(serializers.ModelSerializer):
     children = serializers.SerializerMethodField()
     permission = serializers.SerializerMethodField()
-    userType=serializers.SerializerMethodField()
+    userType = serializers.SerializerMethodField()
+
     class Meta:
         model = NavItem
-        fields = ['id', 'label', 'url','userType', 'parent','order', 'is_active', 'icon','children','permission']
+        fields = [
+            "id",
+            "label",
+            "url",
+            "userType",
+            "parent",
+            "order",
+            "is_active",
+            "icon",
+            "children",
+            "permission",
+        ]
+
     def get_children(self, obj):
-        children = NavItem.objects.filter(parent=obj)
-        # Recursively serialize children    
+        children = NavItem.objects.filter(parent=obj, isDeleted=False)
+        # Recursively serialize children
         return GetSerializer(children, many=True, context=self.context).data
-    
+
     def get_userType(self, obj):
-        return self.context.get('userType')
+        return self.context.get("userType")
+
     def get_permission(self, obj):
-        userType = self.context.get('userType')
+        userType = self.context.get("userType")
         try:
             relation = NavUserRelation.objects.get(navigateId=obj, userType=userType)
             return {

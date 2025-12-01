@@ -1,5 +1,5 @@
 from squad import settings
-from squad.task import  export_model_csv
+from squad.task import export_model_csv
 from rest_framework.response import Response
 import os
 from rest_framework.permissions import AllowAny
@@ -11,7 +11,9 @@ from celery.result import AsyncResult
 from django.http import HttpRequest
 
 
-def start_csv_export(self, request, module=None, model_name=None,fields=None, filter_dict=None):
+def start_csv_export(
+    self, request, module=None, model_name=None, fields=None, filter_dict=None
+):
 
     # Convert queryset filters the same way DRF FilterSet does
     # filtered_qs = self.filter_queryset(self.get_queryset())
@@ -24,14 +26,10 @@ def start_csv_export(self, request, module=None, model_name=None,fields=None, fi
             pass
 
     task = export_model_csv.delay(
-        model_name=model_name,
-        filters=filters,
-        fields=fields or None,
-        module=module
+        model_name=model_name, filters=filters, fields=fields or None, module=module
     )
 
     return Response({"task_id": task.id, "status": "processing"})
-
 
 
 def csv_status(request: HttpRequest, module: str):
@@ -47,12 +45,10 @@ def csv_status(request: HttpRequest, module: str):
         download_url = request.build_absolute_uri(
             f"/download-file/{module}/{filename}/"
         )
-        return JsonResponse({
-            "ready": True,
-            "download_url": download_url
-        })
+        return JsonResponse({"ready": True, "download_url": download_url})
 
     return JsonResponse({"ready": False})
+
 
 def download_file(request: HttpRequest, module: str, filename: str):
 
@@ -63,8 +59,9 @@ def download_file(request: HttpRequest, module: str, filename: str):
     file_handle = open(file_path, "rb")
 
     response = FileResponse(open(file_path, "rb"), as_attachment=True)
-    response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
     response["Content-Type"] = "text/csv"
+
     def remove_file_callback(response):
         try:
             file_handle.close()
@@ -77,6 +74,7 @@ def download_file(request: HttpRequest, module: str, filename: str):
         remove_file_callback(response),
     )
     return response
+
 
 def get_permissions(self):
     # Allow anyone for download_file

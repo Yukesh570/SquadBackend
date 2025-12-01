@@ -1,6 +1,3 @@
-
-
-
 import jwt
 
 from datetime import timedelta

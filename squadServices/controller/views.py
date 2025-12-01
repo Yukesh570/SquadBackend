@@ -22,15 +22,18 @@ from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
+
 class NavItemFilter(django_filters.FilterSet):
-    label = django_filters.CharFilter(lookup_expr='icontains')   
+    label = django_filters.CharFilter(lookup_expr="icontains")
     parent_label = django_filters.CharFilter(
-            field_name='parent__label',
-            lookup_expr='icontains'
-        )
+        field_name="parent__label", lookup_expr="icontains"
+    )
+
     class Meta:
         model = NavItem
-        fields = ['label','parent_label']
+        fields = ["label", "parent_label"]
+
+
 class NavItemViewSet(viewsets.ModelViewSet):
     queryset = NavItem.objects.all()
     serializer_class = NavItemSerializer
@@ -40,12 +43,13 @@ class NavItemViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = NavItemFilter
+
     def get_queryset(self):
         if self.action == "list":
             module = self.kwargs.get("module")
             check_permission(self, "read", module)
 
-            return NavItem.objects.filter(is_active=True,isDeleted=False)
+            return NavItem.objects.filter(is_active=True, isDeleted=False)
         return super().get_queryset()
 
     def perform_create(self, serializer):
@@ -53,28 +57,30 @@ class NavItemViewSet(viewsets.ModelViewSet):
         print("asdfasdfasdf", module)
         user = self.request.user
         check_permission(self, "write", module)
-        label=serializer.validated_data.get("label")
+        label = serializer.validated_data.get("label")
 
         exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
         if exist.exists():
             raise ValidationError({"error": "NavItem with this name already exists."})
-        serializer.save(createdBy=user, updatedBy=user) 
-        parent=serializer.validated_data.get("parent")
+        serializer.save(createdBy=user, updatedBy=user)
+        parent = serializer.validated_data.get("parent")
         if parent:
-            print("parent",parent)
-            url=parent.url+ "/" + serializer.validated_data.get("url")
-            print("url==",url)
+            print("parent", parent)
+            url = parent.url + "/" + serializer.validated_data.get("url")
+            print("url==", url)
             serializer.validated_data["url"] = url
         serializer.save(createdBy=user, updatedBy=user)
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
         check_permission(self, "put", module)
-        label=serializer.validated_data.get("label")
+        label = serializer.validated_data.get("label")
         if label != serializer.instance.label:
             exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
             if exist.exists():
-                raise ValidationError({"error": "NavItem with the same name already exists."})
+                raise ValidationError(
+                    {"error": "NavItem with the same name already exists."}
+                )
         user = self.request.user
         serializer.save(updatedBy=user)
 
@@ -181,7 +187,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
                 delete=(value == UserType.ADMIN),
                 put=(value == UserType.ADMIN),
             )
-            for value,label in UserType.choices
+            for value, label in UserType.choices
         ]
 
         NavUserRelation.objects.bulk_create(relations)
