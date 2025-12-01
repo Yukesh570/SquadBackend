@@ -4,14 +4,14 @@ services:
   backend:
     build: .
     container_name: squad-backend
-    command: gunicorn squad.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+    command: gunicorn squad.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 2 --timeout 120
     env_file:
       - .env
     depends_on:
       - db
       - rabbitmq
-    ports:
-      - "8000:8000" # Django API on host:8000
+    expose:
+      - "8000" # Django API on host:8000
 
   celery:
     build: .
