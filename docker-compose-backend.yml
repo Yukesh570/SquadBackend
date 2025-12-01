@@ -10,8 +10,8 @@ services:
     depends_on:
       - db
       - rabbitmq
-    expose:
-      - "8000" # Django API on host:8000
+    ports:
+      - "8000:8000" # Django API on host:8000
 
   celery:
     build: .
