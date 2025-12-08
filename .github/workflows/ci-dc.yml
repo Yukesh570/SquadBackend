@@ -35,6 +35,7 @@ jobs:
             --exclude '__pycache__/' \
             --exclude '.git/' \
             --exclude 'node_modules/' \
+            --exclude '.env' \
             ./ ${{ env.SSH_USER }}@${{ env.SSH_HOST }}:${{ env.REMOTE_DIR }}/
 
       - name: SSH → Deploy Django + Celery + RabbitMQ
