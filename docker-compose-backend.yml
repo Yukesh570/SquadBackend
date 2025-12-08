@@ -34,6 +34,15 @@ services:
       - db
       - rabbitmq
 
+  redis:
+    image: redis:7-alpine
+    container_name: squad-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
   db:
     image: postgres:15
     container_name: squad-postgres
@@ -71,3 +80,4 @@ services:
 volumes:
   postgres_data:
   rabbitmq_data:
+  redis_data:

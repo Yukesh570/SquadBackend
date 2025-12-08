@@ -34,6 +34,13 @@ from squadServices.controller.emailController import (
     EmailHostViewSet,
     EmailTemplateViewSet,
 )
+from squadServices.controller.mappingSetupController.mappingSetupController import (
+    MappingSetupViewSet,
+)
+from squadServices.controller.networkController import NetworkViewSet
+from squadServices.controller.rateManagementController.customerRateController import (
+    CustomerRateViewSet,
+)
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
@@ -47,6 +54,13 @@ from squadServices.controller.views import (
     sendMail,
 )
 from squadServices.helper.csvDownloadHelper import csv_status, download_file
+from squadServices.controller.rateManagementController.vendorRateController import (
+    VendorRateViewSet,
+)
+from squadServices.helper.csvUploadHelper import (
+    upload_vendor_rate_csv,
+    vendor_rate_import_status,
+)
 
 
 urlpatterns = [
@@ -435,6 +449,88 @@ urlpatterns = [
             }
         ),
     ),
+    path(
+        "vendorRate/<str:module>/",
+        VendorRateViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="vendorRate",
+    ),
+    path(
+        "vendorRate/<str:module>/<int:pk>/",
+        VendorRateViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="vendorRate",
+    ),
+    path(
+        "customerRate/<str:module>/",
+        CustomerRateViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="customerRate",
+    ),
+    path(
+        "customerRate/<str:module>/<int:pk>/",
+        CustomerRateViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="customerRate",
+    ),
+    path(
+        "network/<str:module>/",
+        NetworkViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "network/<str:module>/<int:pk>/",
+        NetworkViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "mappingSetup/<str:module>/",
+        MappingSetupViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "mappingSetup/<str:module>/<int:pk>/",
+        MappingSetupViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path("vendor-rate/import/", upload_vendor_rate_csv),
+    path("vendor-rate/import/status/<str:task_id>/", vendor_rate_import_status),
 ]
 
 

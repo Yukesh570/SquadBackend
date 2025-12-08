@@ -15,6 +15,8 @@ from squadServices.serializer.navSerializer import (
     NavItemSerializer,
     NavUserRelationSerializer,
 )
+from django.db.models import Max
+
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.decorators import api_view
@@ -34,10 +36,31 @@ class NavItemFilter(django_filters.FilterSet):
         fields = ["label", "parent_label"]
 
 
+def adjust_order(parent=None, new_order=None, exclude_id=None):
+    """
+    Adjusts orders of NavItems at the same level (same parent).
+    If new_order is provided, shifts items >= new_order down by 1.
+    """
+    qs = NavItem.objects.filter(parent=parent, isDeleted=False).order_by("order")
+    if exclude_id:
+        qs = qs.exclude(id=exclude_id)
+
+    if new_order is None:
+        # Assign max order + 1
+        max_order = qs.aggregate(Max("order"))["order__max"] or 0
+        return max_order + 1
+    else:
+        # Shift items >= new_order down
+        qs_to_shift = qs.filter(order__gte=new_order)
+        for item in qs_to_shift:
+            item.order += 1
+            item.save()
+        return new_order
+
+
 class NavItemViewSet(viewsets.ModelViewSet):
     queryset = NavItem.objects.all()
     serializer_class = NavItemSerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -58,22 +81,28 @@ class NavItemViewSet(viewsets.ModelViewSet):
         user = self.request.user
         check_permission(self, "write", module)
         label = serializer.validated_data.get("label")
+        order = serializer.validated_data.get("order")
 
         exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
         if exist.exists():
             raise ValidationError({"error": "NavItem with this name already exists."})
         serializer.save(createdBy=user, updatedBy=user)
         parent = serializer.validated_data.get("parent")
+        serializer.validated_data["order"] = adjust_order(parent, order)
+
         if parent:
-            print("parent", parent)
             url = parent.url + "/" + serializer.validated_data.get("url")
-            print("url==", url)
             serializer.validated_data["url"] = url
         serializer.save(createdBy=user, updatedBy=user)
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
         check_permission(self, "put", module)
+        instance = serializer.instance
+
+        new_order = serializer.validated_data.get("order", instance.order)
+        parent = serializer.validated_data.get("parent", instance.parent)
+
         label = serializer.validated_data.get("label")
         if label != serializer.instance.label:
             exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
@@ -81,6 +110,22 @@ class NavItemViewSet(viewsets.ModelViewSet):
                 raise ValidationError(
                     {"error": "NavItem with the same name already exists."}
                 )
+        if new_order != instance.order or parent != instance.parent:
+            # Shift orders at old level (remove gap)
+            old_siblings = (
+                NavItem.objects.filter(parent=instance.parent, isDeleted=False)
+                .exclude(id=instance.id)
+                .order_by("order")
+            )
+            for idx, item in enumerate(old_siblings, start=1):
+                item.order = idx
+                item.save()
+
+        # Adjust order at new level
+        serializer.validated_data["order"] = adjust_order(
+            parent, new_order, exclude_id=instance.id
+        )
+
         user = self.request.user
         serializer.save(updatedBy=user)
 
@@ -91,6 +136,13 @@ class NavItemViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        siblings = NavItem.objects.filter(
+            parent=instance.parent, isDeleted=False
+        ).order_by("order")
+
+        for idx, item in enumerate(siblings, start=1):
+            item.order = idx
+            item.save()
 
 
 class GetNavUserRelationViewSet(viewsets.ModelViewSet):
@@ -100,7 +152,9 @@ class GetNavUserRelationViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        return NavItem.objects.filter(parent=None, is_active=True, isDeleted=False)
+        return NavItem.objects.filter(
+            parent=None, is_active=True, isDeleted=False
+        ).order_by("order")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -114,7 +168,7 @@ class GetNavUserRelationViewSet(viewsets.ModelViewSet):
         )
         nav_items = NavItem.objects.filter(
             id__in=related_nav_ids, parent=None, is_active=True, isDeleted=False
-        )
+        ).order_by("order")
 
         serializer = self.get_serializer(
             nav_items, many=True, context={"userType": userType}

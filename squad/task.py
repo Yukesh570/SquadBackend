@@ -7,10 +7,22 @@ from django.core.mail import get_connection, EmailMessage
 from django.core.mail import EmailMultiAlternatives
 from datetime import datetime
 import csv
+import redis
+from django.contrib.auth import get_user_model
+
+from squadServices.models.mappingSetup.mappingSetup import MappingSetup
+from squadServices.serializer.roleManagementSerializer.vendorRateSerializer import (
+    VendorRateImportSerializer,
+)
+from dateutil import parser
+
+User = get_user_model()
 from django.conf import settings
 from squadServices.models.company import Company
 from squadServices.models.email import EmailHost
 import uuid
+
+redis_client = redis.StrictRedis.from_url(settings.CELERY_RESULT_BACKEND)
 
 
 @shared_task
@@ -72,10 +84,14 @@ def export_model_csv(model_name: str, filters=None, fields=None, module=None):
     """
     Generate CSV for any model asynchronously.
     """
+    task_id = export_model_csv.request.id  # unique task ID
+
     # Resolve model
     try:
         Model = apps.get_model(model_name)
     except LookupError:
+        redis_client.set(task_id, "error:Model not found")
+
         return f"Model {model_name} not found"
 
     # Generate unique filename
@@ -97,25 +113,35 @@ def export_model_csv(model_name: str, filters=None, fields=None, module=None):
     if filters:
         transformed_filters = {f"{k}__icontains": v for k, v in filters.items()}
         queryset = queryset.filter(**transformed_filters)
-
+    total = queryset.count()
+    if total == 0:
+        redis_client.set(task_id, "100")
+        redis_client.set(f"{task_id}_result", filename)
+        return filename
     # Determine fields
     if fields is None:
         fields = [field.name for field in Model._meta.fields]
+    processed = 0
 
     # Write CSV
     with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(fields)
         for obj in queryset.iterator(chunk_size=2000):
+            processed += 1
+
             row = [
                 getattr(obj, f, getattr(getattr(obj, f, ""), "name", ""))
                 for f in fields
             ]
             writer.writerow(row)
+            progress = int((processed / total) * 100)
+            redis_client.set(task_id, progress)
 
     # Schedule deletion after 5 minutes
     delete_exported_file_later.apply_async(args=[filepath], countdown=300)
-
+    redis_client.set(task_id, "100")
+    redis_client.set(f"{task_id}_result", filename)
     return filename
 
 
@@ -127,3 +153,96 @@ def delete_exported_file_later(filepath):
             os.remove(filepath)
     except Exception as e:
         print(f"Failed to delete {filepath}: {e}")
+
+
+@shared_task(bind=True)
+def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
+    """
+    Import VendorRate CSV in background.
+    """
+
+    # Set initial progress
+    redis_client.set(task_id, "0")
+
+    created = 0
+    failed = []
+    mapping = MappingSetup.objects.filter(id=mapping_id).first()
+    if not mapping:
+        redis_client.set(task_id, "error: Mapping not found")
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        return
+    if not mapping:
+        redis_client.set(task_id, "error: Mapping not found")
+        return
+    header_map = {
+        mapping.ratePlan: "ratePlan",
+        mapping.country: "country",
+        mapping.countryCode: "countryCode",
+        mapping.timeZone: "timeZone",
+        mapping.network: "network",
+        mapping.MCC: "MCC",
+        mapping.MNC: "MNC",
+        mapping.rate: "rate",
+        mapping.dateTime: "dateTime",
+    }
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            total = len(rows)
+            user = User.objects.get(id=user_id)
+
+            for index, row in enumerate(rows, start=1):
+                mapped_row = {}
+
+                for csv_col, val in row.items():
+                    normalized = csv_col.strip().lower()
+
+                    for csv_header, model_field in header_map.items():
+                        if csv_header.strip().lower() == normalized:
+                            mapped_row[model_field] = val
+                            break
+
+                for key in ["MCC", "MNC", "rate", "countryCode"]:
+                    if mapped_row.get(key) == "":
+                        mapped_row[key] = None
+
+                if mapped_row.get("dateTime"):
+                    try:
+                        mapped_row["dateTime"] = parser.parse(mapped_row["dateTime"])
+                    except:
+                        failed.append({"row": index, "error": "Invalid dateTime"})
+                        continue
+
+                serializer = VendorRateImportSerializer(data=mapped_row)
+
+                if serializer.is_valid():
+                    serializer.save(createdBy=user, updatedBy=user)
+                    created += 1
+                else:
+                    failed.append({"row": index, "error": serializer.errors})
+
+                print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", index)
+                print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", serializer)
+
+                # Update progress (%)
+                progress = int((index / total) * 100)
+                redis_client.set(task_id, str(progress))
+
+    except Exception as e:
+        redis_client.set(task_id, f"error:{str(e)}")
+        return
+
+    # Final progress = 100
+    redis_client.set(task_id, "100")
+
+    # Store results summary
+    redis_client.set(f"{task_id}_result", str({"created": created, "failed": failed}))
+
+    # Delete tmp file
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    return "done"

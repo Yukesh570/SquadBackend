@@ -9,7 +9,11 @@ from squadServices.models.connectivityModel.connectivity import Connectivity
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.email import EmailHost, EmailTemplate
+from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.navItem import NavItem, NavUserRelation
+from squadServices.models.network import Network
+from squadServices.models.rateManagementModel.customerRate import CustomerRate
+from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.users import User
 
 
@@ -288,6 +292,75 @@ class clientAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
+class vendorRateAdmin(admin.ModelAdmin):
+    model = VendorRate
+    list_display = (
+        "id",
+        "ratePlan",
+        "currencyCode",
+        "timeZone",
+        "country",
+        "MCC",
+        "rate",
+        "remark",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("ratePlan", "currencyCode")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class customerRateAdmin(admin.ModelAdmin):
+    model = CustomerRate
+    list_display = (
+        "id",
+        "ratePlan",
+        "currencyCode",
+        "timeZone",
+        "country",
+        "MCC",
+        "rate",
+        "remark",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("ratePlan", "currencyCode")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class NetworkAdmin(admin.ModelAdmin):
+    model = Network
+    list_display = (
+        "id",
+        "name",
+        "MNC",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("name", "MNC")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class MappingSetupAdmin(admin.ModelAdmin):
+    model = MappingSetup
+    list_display = (
+        "id",
+        "ratePlan",
+        "country",
+        "countryCode",
+        "timeZone",
+        "MNC",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("ratePlan", "MNC")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)
 admin.site.register(NavUserRelation, NavUserRelationAdmin)
@@ -309,3 +382,7 @@ admin.site.register(Company, companyAdmin)
 admin.site.register(Connectivity, connectivityAdmin)
 admin.site.register(Vendor, vendorAdmin)
 admin.site.register(Client, clientAdmin)
+admin.site.register(VendorRate, vendorRateAdmin)
+admin.site.register(CustomerRate, customerRateAdmin)
+admin.site.register(Network, NetworkAdmin)
+admin.site.register(MappingSetup, MappingSetupAdmin)

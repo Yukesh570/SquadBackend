@@ -37,7 +37,6 @@ class CountryFilter(django_filters.FilterSet):
 class CountryViewSet(viewsets.ModelViewSet):
     queryset = Country.objects.all()
     serializer_class = CountrySerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
@@ -114,7 +113,6 @@ class StateFilter(django_filters.FilterSet):
 class StateViewSet(viewsets.ModelViewSet):
     queryset = State.objects.all()
     serializer_class = StateSerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -177,7 +175,6 @@ class CurrencyFilter(django_filters.FilterSet):
 class CurrencyViewSet(viewsets.ModelViewSet):
     queryset = Currency.objects.all()
     serializer_class = CurrencySerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -236,7 +233,6 @@ class EntityFilter(django_filters.FilterSet):
 class EntityViewSet(viewsets.ModelViewSet):
     queryset = Entity.objects.all()
     serializer_class = EntitySerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -295,7 +291,6 @@ class TimeZoneFilter(django_filters.FilterSet):
 class TimeZoneViewSet(viewsets.ModelViewSet):
     queryset = TimeZone.objects.all()
     serializer_class = TimeZoneSerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination

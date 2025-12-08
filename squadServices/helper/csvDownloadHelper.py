@@ -1,3 +1,4 @@
+import redis
 from squad import settings
 from squad.task import export_model_csv
 from rest_framework.response import Response
@@ -9,6 +10,8 @@ from rest_framework.decorators import action
 from rest_framework.decorators import action
 from celery.result import AsyncResult
 from django.http import HttpRequest
+
+redis_client = redis.StrictRedis.from_url(settings.CELERY_RESULT_BACKEND)
 
 
 def start_csv_export(
@@ -37,17 +40,23 @@ def csv_status(request: HttpRequest, module: str):
     task_id = request.GET.get("task_id")
     if not task_id:
         return Response({"error": "task_id required"}, status=400)
+    progress = redis_client.get(task_id)
+    if not progress:
+        return JsonResponse({"ready": False, "progress": 0})
+    progress = progress.decode()
+    if progress.startswith("error:"):
+        return JsonResponse({"ready": True, "error": progress[6:]})
 
-    result = AsyncResult(task_id)
-
-    if result.successful():
-        filename = result.result
+    if progress == "100":
+        filename = redis_client.get(f"{task_id}_result").decode()
         download_url = request.build_absolute_uri(
             f"/download-file/{module}/{filename}/"
         )
-        return JsonResponse({"ready": True, "download_url": download_url})
+        return JsonResponse(
+            {"ready": True, "progress": 100, "download_url": download_url}
+        )
 
-    return JsonResponse({"ready": False})
+    return JsonResponse({"ready": False, "progress": int(progress)})
 
 
 def download_file(request: HttpRequest, module: str, filename: str):

@@ -37,7 +37,6 @@ class CompanyCategoryFilter(django_filters.FilterSet):
 class CompanyCategoryViewSet(viewsets.ModelViewSet):
     queryset = CompanyCategory.objects.all()
     serializer_class = CompanyCategorySerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -96,7 +95,6 @@ class CompanyStatusFilter(django_filters.FilterSet):
 class CompanyStatusViewSet(viewsets.ModelViewSet):
     queryset = CompanyStatus.objects.all()
     serializer_class = CompanyStatusSerializer
-    # 👇 Require JWT token authentication
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination

@@ -8,9 +8,11 @@ class NavItem(models.Model):
     label = models.CharField(max_length=50)
     parent = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True)
     url = models.CharField(max_length=200)
-    order = models.IntegerField(default=0)
+    order = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, null=True, blank=True
+    )
     is_active = models.BooleanField(default=True)
-    icon = models.CharField(max_length=50, default="Home")  # 👈 New field
+    icon = models.CharField(max_length=50, default="Home")
     isDeleted = models.BooleanField(default=False)
 
     createdBy = models.ForeignKey(
