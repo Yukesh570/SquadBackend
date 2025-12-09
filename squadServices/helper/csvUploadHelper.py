@@ -72,6 +72,7 @@ def upload_vendor_rate_csv(request):
     temp_path = os.path.join(settings.MEDIA_ROOT, "imports")
     os.makedirs(temp_path, exist_ok=True)
     filepath = os.path.join(temp_path, filename)
+    print("Saving CSV to:", filepath)
 
     with open(filepath, "wb") as out:
         for chunk in file.chunks():
