@@ -62,7 +62,7 @@ class OperatorViewSet(viewsets.ModelViewSet):
             exist = Operators.objects.filter(name__iexact=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
-                    {"error": "Operator with the same name already exists."}
+                    {"error": "Operators with the same name already exists."}
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
