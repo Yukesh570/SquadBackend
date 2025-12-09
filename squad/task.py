@@ -9,6 +9,9 @@ from datetime import datetime
 import csv
 import redis
 from django.contrib.auth import get_user_model
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+import json
 
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.serializer.roleManagementSerializer.vendorRateSerializer import (
@@ -22,7 +25,7 @@ from squadServices.models.company import Company
 from squadServices.models.email import EmailHost
 import uuid
 
-redis_client = redis.StrictRedis.from_url(settings.CELERY_RESULT_BACKEND)
+redis_client = redis.StrictRedis.from_url(os.getenv("CELERY_RESULT_BACKEND"))
 
 
 @shared_task
@@ -157,39 +160,44 @@ def delete_exported_file_later(filepath):
 
 @shared_task(bind=True)
 def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
-    """
-    Import VendorRate CSV in background.
-    """
-
-    # Set initial progress
     redis_client.set(task_id, "0")
 
     created = 0
     failed = []
+
     mapping = MappingSetup.objects.filter(id=mapping_id).first()
     if not mapping:
         redis_client.set(task_id, "error: Mapping not found")
         if os.path.exists(filepath):
             os.remove(filepath)
         return
-    if not mapping:
-        redis_client.set(task_id, "error: Mapping not found")
-        return
+
+    # Normalize header_map once
     header_map = {
-        mapping.ratePlan: "ratePlan",
-        mapping.country: "country",
-        mapping.countryCode: "countryCode",
-        mapping.timeZone: "timeZone",
-        mapping.network: "network",
-        mapping.MCC: "MCC",
-        mapping.MNC: "MNC",
-        mapping.rate: "rate",
-        mapping.dateTime: "dateTime",
+        mapping.ratePlan.lower().strip(): "ratePlan",
+        mapping.country.lower().strip(): "country",
+        mapping.countryCode.lower().strip(): "countryCode",
+        mapping.timeZone.lower().strip(): "timeZone",
+        mapping.network.lower().strip(): "network",
+        mapping.MCC.lower().strip(): "MCC",
+        mapping.MNC.lower().strip(): "MNC",
+        mapping.rate.lower().strip(): "rate",
+        mapping.dateTime.lower().strip(): "dateTime",
     }
 
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
+
+            # Pre-map CSV header names -> model fields
+            csv_header_map = {}
+            for col in reader.fieldnames:
+                normalized_col = col.lower().strip()
+                print("normalized_col", normalized_col)
+                print("header_map", header_map)
+                if normalized_col in header_map:
+                    csv_header_map[col] = header_map[normalized_col]
+
             rows = list(reader)
             total = len(rows)
             user = User.objects.get(id=user_id)
@@ -197,18 +205,17 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
             for index, row in enumerate(rows, start=1):
                 mapped_row = {}
 
-                for csv_col, val in row.items():
-                    normalized = csv_col.strip().lower()
+                # Use pre-mapped header mapping
+                for col, val in row.items():
+                    if col in csv_header_map:
+                        mapped_row[csv_header_map[col]] = val
 
-                    for csv_header, model_field in header_map.items():
-                        if csv_header.strip().lower() == normalized:
-                            mapped_row[model_field] = val
-                            break
-
+                # Clean numeric fields
                 for key in ["MCC", "MNC", "rate", "countryCode"]:
                     if mapped_row.get(key) == "":
                         mapped_row[key] = None
 
+                # Parse datetime
                 if mapped_row.get("dateTime"):
                     try:
                         mapped_row["dateTime"] = parser.parse(mapped_row["dateTime"])
@@ -224,24 +231,16 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
                 else:
                     failed.append({"row": index, "error": serializer.errors})
 
-                print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", index)
-                print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", serializer)
-
-                # Update progress (%)
-                progress = int((index / total) * 100)
-                redis_client.set(task_id, str(progress))
+                # Update progress
+                redis_client.set(task_id, str(int((index / total) * 100)))
 
     except Exception as e:
         redis_client.set(task_id, f"error:{str(e)}")
         return
 
-    # Final progress = 100
     redis_client.set(task_id, "100")
-
-    # Store results summary
     redis_client.set(f"{task_id}_result", str({"created": created, "failed": failed}))
 
-    # Delete tmp file
     if os.path.exists(filepath):
         os.remove(filepath)
 

@@ -12,6 +12,7 @@ from squadServices.models.email import EmailHost, EmailTemplate
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.network import Network
+from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.users import User
@@ -361,6 +362,21 @@ class MappingSetupAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
+class OperatorsAdmin(admin.ModelAdmin):
+    model = Operators
+    list_display = (
+        "id",
+        "name",
+        "country",
+        "MNC",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("ratePlan", "MNC")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)
 admin.site.register(NavUserRelation, NavUserRelationAdmin)
@@ -386,3 +402,4 @@ admin.site.register(VendorRate, vendorRateAdmin)
 admin.site.register(CustomerRate, customerRateAdmin)
 admin.site.register(Network, NetworkAdmin)
 admin.site.register(MappingSetup, MappingSetupAdmin)
+admin.site.register(Operators, OperatorsAdmin)

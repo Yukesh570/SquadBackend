@@ -38,6 +38,9 @@ from squadServices.controller.mappingSetupController.mappingSetupController impo
     MappingSetupViewSet,
 )
 from squadServices.controller.networkController import NetworkViewSet
+from squadServices.controller.operatorController.operatorController import (
+    OperatorViewSet,
+)
 from squadServices.controller.rateManagementController.customerRateController import (
     CustomerRateViewSet,
 )
@@ -522,6 +525,25 @@ urlpatterns = [
     path(
         "mappingSetup/<str:module>/<int:pk>/",
         MappingSetupViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "operator/<str:module>/",
+        OperatorViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "operator/<str:module>/<int:pk>/",
+        OperatorViewSet.as_view(
             {
                 "put": "update",
                 "patch": "partial_update",

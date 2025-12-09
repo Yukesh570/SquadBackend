@@ -7,10 +7,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.conf import settings
 import redis
+import csv
 
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 
-redis_client = redis.StrictRedis.from_url(settings.CELERY_RESULT_BACKEND)
+redis_client = redis.StrictRedis.from_url(os.getenv("CELERY_RESULT_BACKEND"))
 
 from squad.task import import_vendor_rate_task
 
@@ -32,7 +33,40 @@ def upload_vendor_rate_csv(request):
         return Response({"error": "CSV file is required"}, status=400)
     if not mapping:
         return Response({"error": "Mapping setup not found"}, status=400)
+    header_map = {
+        mapping.ratePlan.lower().strip(): "ratePlan",
+        mapping.country.lower().strip(): "country",
+        mapping.countryCode.lower().strip(): "countryCode",
+        mapping.timeZone.lower().strip(): "timeZone",
+        mapping.network.lower().strip(): "network",
+        mapping.MCC.lower().strip(): "MCC",
+        mapping.MNC.lower().strip(): "MNC",
+        mapping.rate.lower().strip(): "rate",
+        mapping.dateTime.lower().strip(): "dateTime",
+    }
+    try:
+        # Read header only
+        file_data = file.read().decode("utf-8").splitlines()
+        reader = csv.reader(file_data)
+        csv_headers = next(reader)
 
+        for col in csv_headers:
+            normalized_col = col.lower().strip()
+            if normalized_col not in header_map:
+                return Response(
+                    {
+                        "status": "error",
+                        "error": f"Header '{col}' does not match mapping setup.",
+                        "required_headers": list(header_map.keys()),
+                    },
+                    status=400,
+                )
+
+    except Exception as e:
+        return Response({"error": "Invalid CSV file", "details": str(e)}, status=400)
+
+    # reset file pointer so it can be saved later
+    file.seek(0)
     # Save file temporarily
     filename = f"vendorRate_{uuid.uuid4().hex}.csv"
     temp_path = os.path.join(settings.MEDIA_ROOT, "imports")

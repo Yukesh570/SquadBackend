@@ -6,3 +6,4 @@ from .connectivityModel.connectivity import Connectivity
 from .rateManagementModel.vendorRate import VendorRate
 from .network import Network
 from .mappingSetup.mappingSetup import MappingSetup
+from .operators.operators import Operators
