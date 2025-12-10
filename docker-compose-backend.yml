@@ -24,6 +24,8 @@ services:
     depends_on:
       - db
       - rabbitmq
+    volumes:
+      - ./media:/app/media
 
   # optional: celery beat (scheduler)
   celery-beat:
@@ -35,6 +37,8 @@ services:
     depends_on:
       - db
       - rabbitmq
+    volumes:
+      - ./media:/app/media
 
   redis:
     image: redis:7-alpine
