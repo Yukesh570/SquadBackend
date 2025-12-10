@@ -165,6 +165,7 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
     print("=============================")
     created = 0
     failed = []
+    print("=========!!!!====================")
 
     mapping = MappingSetup.objects.filter(id=mapping_id).first()
     if not mapping:
@@ -172,6 +173,7 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
         if os.path.exists(filepath):
             os.remove(filepath)
         return
+    print("=========!!!!====================")
 
     # Normalize header_map once
     header_map = {
@@ -185,6 +187,7 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
         mapping.rate.lower().strip(): "rate",
         mapping.dateTime.lower().strip(): "dateTime",
     }
+    print("=========!!!!====================")
 
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -202,19 +205,23 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
             rows = list(reader)
             total = len(rows)
             user = User.objects.get(id=user_id)
+            print("=========!!!!====================")
 
             for index, row in enumerate(rows, start=1):
                 mapped_row = {}
+                print("=========!!!!====================")
 
                 # Use pre-mapped header mapping
                 for col, val in row.items():
                     if col in csv_header_map:
                         mapped_row[csv_header_map[col]] = val
+                print("=========!!!!====================")
 
                 # Clean numeric fields
                 for key in ["MCC", "MNC", "rate", "countryCode"]:
                     if mapped_row.get(key) == "":
                         mapped_row[key] = None
+                print("=========!!!!====================")
 
                 # Parse datetime
                 if mapped_row.get("dateTime"):
@@ -223,6 +230,7 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
                     except:
                         failed.append({"row": index, "error": "Invalid dateTime"})
                         continue
+                print("=========!!!!====================")
 
                 serializer = VendorRateImportSerializer(data=mapped_row)
 
