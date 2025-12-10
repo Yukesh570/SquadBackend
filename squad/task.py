@@ -162,6 +162,7 @@ def delete_exported_file_later(filepath):
 def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
     redis_client.set(task_id, "0")
     print("import_vendor_rate_task", filepath, user_id, task_id, mapping_id)
+    print("=============================")
     created = 0
     failed = []
 
