@@ -1,13 +1,13 @@
-from squadServices.models.connectivityModel.connectivity import Connectivity
+from squadServices.models.connectivityModel.smpp import SMPP
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from rest_framework import serializers
 
 
-class ConnectivitySerializer(serializers.ModelSerializer):
+class SMPPSerializer(serializers.ModelSerializer):
     # countryName = serializers.CharField(source='country.name', read_only=True)
 
     class Meta:
-        model = Connectivity
+        model = SMPP
         fields = [
             "id",
             "smppHost",

@@ -19,10 +19,19 @@ class VendorFilter(django_filters.FilterSet):
     profileName = django_filters.CharFilter(lookup_expr="icontains")
     connectionType = django_filters.CharFilter(lookup_expr="icontains")
     createdAt = django_filters.DateFromToRangeFilter()
+    smppName = django_filters.CharFilter(
+        field_name="smpp_smppHost", lookup_expr="icontains"
+    )
 
     class Meta:
         model = Vendor
-        fields = ["companyName", "profileName", "connectionType", "createdAt"]
+        fields = [
+            "companyName",
+            "profileName",
+            "connectionType",
+            "smppName",
+            "createdAt",
+        ]
 
 
 class VendorViewSet(viewsets.ModelViewSet):

@@ -8,9 +8,7 @@ import django_filters
 
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
-from squadServices.serializer.connectivitySerializer.vendorSerializer import (
-    VendorSerializer,
-)
+
 from squadServices.serializer.roleManagementSerializer.vendorRateSerializer import (
     VendorRateSerializer,
 )

@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 
 from squadServices.models.company import Company
+from squadServices.models.connectivityModel.smpp import SMPP
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 
 CONNECTION_TYPE_CHOICES = [
@@ -14,7 +15,9 @@ class Vendor(models.Model):
     company = models.ForeignKey(
         Company, on_delete=models.CASCADE, related_name="company"
     )
-
+    smpp = models.ForeignKey(
+        SMPP, on_delete=models.DO_NOTHING, related_name="smpp", null=True, blank=True
+    )
     profileName = models.CharField(max_length=255)
     connectionType = models.CharField(
         max_length=4,

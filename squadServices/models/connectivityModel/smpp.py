@@ -9,7 +9,8 @@ BIND_MODE_CHOICES = [
 ]
 
 
-class Connectivity(models.Model):
+# SMPP Model
+class SMPP(models.Model):
     smppHost = models.CharField(max_length=255)
     smppPort = models.IntegerField(default=587)
     systemID = models.CharField(max_length=255)

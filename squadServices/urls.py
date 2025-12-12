@@ -19,8 +19,8 @@ from squadServices.controller.companyController import (
     CompanyStatusViewSet,
     CompanyViewSet,
 )
-from squadServices.controller.connnectivity.connectivityController import (
-    ConnectivityViewSet,
+from squadServices.controller.connnectivity.SMPPController import (
+    SMPPViewSet,
 )
 from squadServices.controller.connnectivity.vendorController import VendorViewSet
 from squadServices.controller.countryController import (
@@ -221,25 +221,25 @@ urlpatterns = [
         name="emailHost",
     ),
     path(
-        "connectivity/<str:module>/",
-        ConnectivityViewSet.as_view(
+        "smpp/<str:module>/",
+        SMPPViewSet.as_view(
             {
                 "get": "list",
                 "post": "create",
             }
         ),
-        name="connectivity",
+        name="smpp",
     ),
     path(
-        "connectivity/<str:module>/<int:pk>/",
-        ConnectivityViewSet.as_view(
+        "smpp/<str:module>/<int:pk>/",
+        SMPPViewSet.as_view(
             {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
             }
         ),
-        name="connectivity",
+        name="smpp",
     ),
     path(
         "vendor/<str:module>/",

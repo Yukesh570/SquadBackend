@@ -5,7 +5,7 @@ from squadServices.models.campaign import Campaign, CampaignContact, Template
 from squadServices.models.clientModel.client import Client
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
 
-from squadServices.models.connectivityModel.connectivity import Connectivity
+from squadServices.models.connectivityModel.smpp import SMPP
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.email import EmailHost, EmailTemplate
@@ -247,7 +247,7 @@ class companyAdmin(admin.ModelAdmin):
 
 
 class connectivityAdmin(admin.ModelAdmin):
-    model = Connectivity
+    model = SMPP
     list_display = (
         "id",
         "smppHost",
@@ -395,7 +395,7 @@ admin.site.register(Currency, currencyAdmin)
 admin.site.register(Entity, entityAdmin)
 admin.site.register(TimeZone, timeZoneAdmin)
 admin.site.register(Company, companyAdmin)
-admin.site.register(Connectivity, connectivityAdmin)
+admin.site.register(SMPP, connectivityAdmin)
 admin.site.register(Vendor, vendorAdmin)
 admin.site.register(Client, clientAdmin)
 admin.site.register(VendorRate, vendorRateAdmin)
