@@ -2,6 +2,8 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 
+from squadServices.models.users import UserLoginHistory
+
 
 User = get_user_model()
 
@@ -43,3 +45,31 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "email", "phone", "userType"]
+
+
+class UserLoginHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserLoginHistory
+        fields = [
+            "ipAddress",
+            "browser",
+            "device",
+            "userAgent",
+            "loggedAt",
+        ]
+
+
+class UserWithLoginHistorySerializer(serializers.ModelSerializer):
+    loginHistory = UserLoginHistorySerializer(many=True, read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "phone",
+            "userType",
+            "last_login",
+            "loginHistory",
+        ]

@@ -49,6 +49,7 @@ from squadServices.controller.user import (
     EditUserView,
     LoginView,
     RegisterView,
+    UserProfileView,
 )
 from squadServices.controller.views import (
     GetNavUserRelationViewSet,
@@ -77,6 +78,7 @@ urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", LoginView.as_view(), name="login"),
     path("user/edit/<int:pk>/", EditUserView.as_view(), name="edit-user"),
+    path("userLog/", UserProfileView.as_view(), name="user-profile"),
     path("changePassword/", ChangePasswordView.as_view(), name="changePassword"),
     path(
         "navItem/<str:module>/",
@@ -234,6 +236,7 @@ urlpatterns = [
         "smpp/<str:module>/<int:pk>/",
         SMPPViewSet.as_view(
             {
+                "get": "retrieve",
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",

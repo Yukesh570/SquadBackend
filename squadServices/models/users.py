@@ -21,3 +21,22 @@ class User(AbstractUser):
     isDeleted = models.BooleanField(default=False)
     createdAt = models.DateTimeField(auto_now_add=True)
     updatedAt = models.DateTimeField(auto_now=True)
+
+
+class UserLoginHistory(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.DO_NOTHING,
+        related_name="loginHistory",
+    )
+    ipAddress = models.GenericIPAddressField(null=True, blank=True)
+    browser = models.CharField(max_length=100, blank=True)
+    device = models.CharField(max_length=100, blank=True)
+    userAgent = models.TextField(blank=True)
+    loggedAt = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-loggedAt"]
+
+    def __str__(self):
+        return f"{self.user.username} | {self.ipAddress} | {self.loggedAt}"

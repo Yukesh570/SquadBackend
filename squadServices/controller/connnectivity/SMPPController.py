@@ -48,6 +48,11 @@ class SMPPViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_class = SMPPFilter
 
+    def retrieve(self, request, *args, **kwargs):
+        module = self.kwargs.get("module")
+        check_permission(self, "read", module)
+        return super().retrieve(request, *args, **kwargs)
+
     def get_queryset(self):
         module = self.kwargs.get("module")
         check_permission(self, "read", module)

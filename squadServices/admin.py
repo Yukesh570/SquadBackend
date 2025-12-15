@@ -15,7 +15,7 @@ from squadServices.models.network import Network
 from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
-from squadServices.models.users import User
+from squadServices.models.users import User, UserLoginHistory
 
 
 class CustomUserAdmin(UserAdmin):
@@ -28,6 +28,19 @@ class CustomUserAdmin(UserAdmin):
     list_display = ("id", "phone", "userType") + UserAdmin.list_display
     search_fields = UserAdmin.search_fields + ("phone", "userType")
     readonly_fields = ("createdAt", "updatedAt")
+
+
+class UserLoginHistoryAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "ipAddress",
+        "browser",
+        "device",
+        "loggedAt",
+    )
+    list_filter = ("browser", "device", "loggedAt")
+    search_fields = ("user__username", "ipAddress")
+    readonly_fields = ("loggedAt",)
 
 
 class NavItemAdmin(admin.ModelAdmin):
@@ -403,3 +416,4 @@ admin.site.register(CustomerRate, customerRateAdmin)
 admin.site.register(Network, NetworkAdmin)
 admin.site.register(MappingSetup, MappingSetupAdmin)
 admin.site.register(Operators, OperatorsAdmin)
+admin.site.register(UserLoginHistory, UserLoginHistoryAdmin)

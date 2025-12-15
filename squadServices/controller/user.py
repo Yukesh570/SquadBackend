@@ -6,8 +6,18 @@ from django.contrib.auth import get_user_model
 from squad.utils.authenticators import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 
-from squadServices.serializer.userSerializer import RegisterSerializer, UserSerializer
+from squadServices.models.users import UserLoginHistory
+from squadServices.serializer.userSerializer import (
+    RegisterSerializer,
+    UserLoginHistorySerializer,
+    UserSerializer,
+    UserWithLoginHistorySerializer,
+)
 from rest_framework.permissions import AllowAny
+
+from squadServices.utils import get_browser_device, get_client_ip
+from django.utils import timezone
+from rest_framework.views import APIView
 
 User = get_user_model()
 
@@ -31,7 +41,16 @@ class LoginView(generics.GenericAPIView):
             return Response(
                 {"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED
             )
-
+        ip = get_client_ip(request)
+        user_agent = request.META.get("HTTP_USER_AGENT", "")
+        browser, device = get_browser_device(user_agent)
+        UserLoginHistory.objects.create(
+            user=user,
+            ipAddress=ip,
+            browser=browser,
+            device=device,
+            userAgent=user_agent,
+        )
         token = create_jwt_token(user)
         return Response({"token": token, "user": UserSerializer(user).data})
 
@@ -84,3 +103,11 @@ class EditUserView(generics.GenericAPIView):
             {"detail": "User updated successfully.", "user": serializer.data},
             status=status.HTTP_200_OK,
         )
+
+
+class UserProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserWithLoginHistorySerializer(request.user)
+        return Response(serializer.data)
