@@ -1,3 +1,4 @@
+import django_filters
 from rest_framework import generics, status
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
@@ -5,6 +6,7 @@ from squad.utils.jwt_helpers import create_jwt_token
 from django.contrib.auth import get_user_model
 from squad.utils.authenticators import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
+from squadServices.helper.pagination import StandardResultsSetPagination
 
 from squadServices.models.users import UserLoginHistory
 from squadServices.serializer.userSerializer import (
@@ -18,6 +20,7 @@ from rest_framework.permissions import AllowAny
 from squadServices.utils import get_browser_device, get_client_ip
 from django.utils import timezone
 from rest_framework.views import APIView
+from django_filters.rest_framework import DjangoFilterBackend
 
 User = get_user_model()
 
@@ -25,6 +28,17 @@ User = get_user_model()
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+
+
+class UserLoginHistoryFilter(django_filters.FilterSet):
+    ipAddress = django_filters.CharFilter(lookup_expr="icontains")
+    browser = django_filters.CharFilter(lookup_expr="icontains")
+    device = django_filters.CharFilter(lookup_expr="icontains")
+    loggedAt = django_filters.DateFromToRangeFilter()
+
+    class Meta:
+        model = UserLoginHistory
+        fields = ["ipAddress", "browser", "device", "loggedAt"]
 
 
 class LoginView(generics.GenericAPIView):
@@ -105,9 +119,19 @@ class EditUserView(generics.GenericAPIView):
         )
 
 
-class UserProfileView(APIView):
+class UserInformationView(generics.RetrieveAPIView):
+    serializer_class = UserWithLoginHistorySerializer
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        serializer = UserWithLoginHistorySerializer(request.user)
-        return Response(serializer.data)
+    def get_object(self):
+        return self.request.user
+
+
+class UserProfileView(generics.ListAPIView):
+    serializer_class = UserLoginHistorySerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = UserLoginHistoryFilter
+
+    def get_queryset(self):
+        return UserLoginHistory.objects.filter(user=self.request.user)

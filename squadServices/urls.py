@@ -49,6 +49,7 @@ from squadServices.controller.user import (
     EditUserView,
     LoginView,
     RegisterView,
+    UserInformationView,
     UserProfileView,
 )
 from squadServices.controller.views import (
@@ -78,7 +79,8 @@ urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", LoginView.as_view(), name="login"),
     path("user/edit/<int:pk>/", EditUserView.as_view(), name="edit-user"),
-    path("userLog/", UserProfileView.as_view(), name="user-profile"),
+    path("userLog/", UserProfileView.as_view()),
+    path("userInformation/", UserInformationView.as_view()),
     path("changePassword/", ChangePasswordView.as_view(), name="changePassword"),
     path(
         "navItem/<str:module>/",
