@@ -36,6 +36,9 @@ class EmailHost(models.Model):
     )
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.name
 
@@ -60,6 +63,9 @@ class EmailTemplate(models.Model):
         related_name="emailTemplate_updated",
     )
     updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updatedAt"]
 
     def __str__(self):
         return self.name

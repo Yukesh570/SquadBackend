@@ -31,6 +31,9 @@ class CompanyCategory(models.Model):
     )
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.name
 
@@ -53,6 +56,9 @@ class CompanyStatus(models.Model):
         related_name="status_updated",
     )
     updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updatedAt"]
 
     def __str__(self):
         return self.name
@@ -143,6 +149,9 @@ class Company(models.Model):
         related_name="companies_updated",
     )
     updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updatedAt"]
 
     def __str__(self):
         return self.name

@@ -15,6 +15,7 @@ from squadServices.models.network import Network
 from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
+from squadServices.models.routeManager.customRoute import CustomRoute
 from squadServices.models.users import User, UserLoginHistory
 
 
@@ -387,6 +388,21 @@ class OperatorsAdmin(admin.ModelAdmin):
         "updatedAt",
     )
     search_fields = ("ratePlan", "MNC")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class CustomRouteAdmin(admin.ModelAdmin):
+    model = CustomRoute
+    list_display = (
+        "id",
+        "name",
+        "status",
+        "MNC",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("name", "status")
     readonly_fields = ("createdAt", "updatedAt")
 
 

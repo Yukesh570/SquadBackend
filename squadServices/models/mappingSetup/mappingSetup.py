@@ -30,5 +30,8 @@ class MappingSetup(models.Model):
     )
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.ratePlan

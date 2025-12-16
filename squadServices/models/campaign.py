@@ -1,4 +1,3 @@
-from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.db import models
 
 from squad import settings
@@ -30,6 +29,9 @@ class Template(models.Model):
     )
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.name
 
@@ -59,6 +61,9 @@ class Campaign(models.Model):
         related_name="campaign_updated",
     )
     updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updatedAt"]
 
     def __str__(self):
         return self.name

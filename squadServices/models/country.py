@@ -22,6 +22,9 @@ class Country(models.Model):
     )
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.name
 
@@ -48,6 +51,9 @@ class State(models.Model):
     )
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.name
 
@@ -73,6 +79,9 @@ class Currency(models.Model):
         related_name="currency_updated",
     )
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.name
 
@@ -95,6 +104,9 @@ class Entity(models.Model):
         related_name="entities_updated",
     )
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         return self.name
 
@@ -116,6 +128,9 @@ class TimeZone(models.Model):
         null=True,
         related_name="timeZone_updated",
     )
+
+    class Meta:
+        ordering = ["-updatedAt"]
 
     def __str__(self):
         return self.name

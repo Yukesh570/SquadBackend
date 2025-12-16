@@ -22,6 +22,9 @@ class User(AbstractUser):
     createdAt = models.DateTimeField(auto_now_add=True)
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
 
 class UserLoginHistory(models.Model):
     user = models.ForeignKey(

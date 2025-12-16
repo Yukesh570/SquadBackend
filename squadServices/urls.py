@@ -44,6 +44,9 @@ from squadServices.controller.operatorController.operatorController import (
 from squadServices.controller.rateManagementController.customerRateController import (
     CustomerRateViewSet,
 )
+from squadServices.controller.routeManagerController.customRouteController import (
+    CustomRouteViewSet,
+)
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
@@ -549,6 +552,25 @@ urlpatterns = [
     path(
         "operator/<str:module>/<int:pk>/",
         OperatorViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "customRoute/<str:module>/",
+        CustomRouteViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "customRoute/<str:module>/<int:pk>/",
+        CustomRouteViewSet.as_view(
             {
                 "put": "update",
                 "patch": "partial_update",

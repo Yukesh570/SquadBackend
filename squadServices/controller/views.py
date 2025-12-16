@@ -23,6 +23,7 @@ from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
+from django.db import transaction
 
 
 class NavItemFilter(django_filters.FilterSet):
@@ -86,14 +87,29 @@ class NavItemViewSet(viewsets.ModelViewSet):
         exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
         if exist.exists():
             raise ValidationError({"error": "NavItem with this name already exists."})
-        serializer.save(createdBy=user, updatedBy=user)
         parent = serializer.validated_data.get("parent")
         serializer.validated_data["order"] = adjust_order(parent, order)
 
         if parent:
             url = parent.url + "/" + serializer.validated_data.get("url")
             serializer.validated_data["url"] = url
-        serializer.save(createdBy=user, updatedBy=user)
+        with transaction.atomic():
+
+            nav_item = serializer.save(createdBy=user, updatedBy=user)
+            print("data !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", nav_item)
+            relations = [
+                NavUserRelation(
+                    userType=value,
+                    navigateId=nav_item,
+                    read=True,
+                    write=(value == UserType.ADMIN),
+                    delete=(value == UserType.ADMIN),
+                    put=(value == UserType.ADMIN),
+                )
+                for value, _ in UserType.choices
+            ]
+
+            NavUserRelation.objects.bulk_create(relations)
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -191,6 +207,7 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
             )
         return super().get_queryset()
 
+    # create bulk nav user relation for a user type
     def create(self, request, *args, **kwargs):
         userType = request.data.get("userType")
         if not userType:
@@ -221,7 +238,6 @@ class NavUserRelationViewSet(viewsets.ModelViewSet):
 
     def createSidebar(self, request, *args, **kwargs):
         label = request.data.get("label")
-        userType = request.user.userType
         if not label:
             return Response(
                 {"error": "label is required"}, status=status.HTTP_400_BAD_REQUEST

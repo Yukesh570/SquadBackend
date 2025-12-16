@@ -31,6 +31,9 @@ class Operators(models.Model):
     )
     updatedAt = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updatedAt"]
+
     def __str__(self):
         short_name = (self.name[:40] + "...") if len(self.name) > 40 else self.name
         return f"{self.id} - {short_name}"
