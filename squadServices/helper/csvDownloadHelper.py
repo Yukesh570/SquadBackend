@@ -61,7 +61,7 @@ def csv_status(request: HttpRequest, module: str):
 
 def download_file(request: HttpRequest, module: str, filename: str):
 
-    file_path = os.path.join(settings.BASE_DIR, "exports", filename)
+    file_path = os.path.join(settings.BASE_DIR, "media", "exports", filename)
 
     if not os.path.exists(file_path):
         raise Http404("File not found")
