@@ -68,9 +68,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            existingCampaign = Campaign.objects.filter(
-                name__iexact=name, isDeleted=False
-            )
+            existingCampaign = Campaign.objects.filter(name=name, isDeleted=False)
             if existingCampaign.exists():
                 raise ValidationError(
                     {"error": "Campaign with the same name already exists."}
@@ -276,9 +274,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            existingCampaign = Template.objects.filter(
-                name__iexact=name, isDeleted=False
-            )
+            existingCampaign = Template.objects.filter(name=name, isDeleted=False)
             if existingCampaign.exists():
                 raise ValidationError(
                     {"error": "Template with the same name already exists."}

@@ -39,6 +39,8 @@ class CountryViewSet(viewsets.ModelViewSet):
     serializer_class = CountrySerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
     filter_backends = [DjangoFilterBackend]
     filterset_class = CountryFilter
 
@@ -67,7 +69,7 @@ class CountryViewSet(viewsets.ModelViewSet):
         name = serializer.validated_data.get("name")
 
         if name != serializer.instance.name:
-            exist = Country.objects.filter(name__iexact=name, isDeleted=False)
+            exist = Country.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "Country with the same name already exists."}
@@ -145,7 +147,7 @@ class StateViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = State.objects.filter(name__iexact=name, isDeleted=False)
+            exist = State.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "State with the same name already exists."}
@@ -206,7 +208,7 @@ class CurrencyViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = Currency.objects.filter(name__iexact=name, isDeleted=False)
+            exist = Currency.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "Currency with the same name already exists."}
@@ -264,7 +266,7 @@ class EntityViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = Entity.objects.filter(name__iexact=name, isDeleted=False)
+            exist = Entity.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "Entity with the same name already exists."}
@@ -323,7 +325,7 @@ class TimeZoneViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = TimeZone.objects.filter(name__iexact=name, isDeleted=False)
+            exist = TimeZone.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "TimeZone with the same name already exists."}

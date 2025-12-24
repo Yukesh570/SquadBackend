@@ -66,6 +66,8 @@ from squadServices.controller.rateManagementController.vendorRateController impo
     VendorRateViewSet,
 )
 from squadServices.helper.csvUploadHelper import (
+    country_csv,
+    operators_csv,
     upload_vendor_rate_csv,
     vendor_rate_import_status,
 )
@@ -579,7 +581,9 @@ urlpatterns = [
         ),
     ),
     path("vendor-rate/import/", upload_vendor_rate_csv),
-    path("vendor-rate/import/status/<str:task_id>/", vendor_rate_import_status),
+    path("country/import", country_csv),
+    path("operator/import", operators_csv),
+    path("status/<str:task_id>/", vendor_rate_import_status),
 ]
 
 

@@ -59,7 +59,7 @@ class OperatorViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = Operators.objects.filter(name__iexact=name, isDeleted=False)
+            exist = Operators.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "Operators with the same name already exists."}

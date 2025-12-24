@@ -68,7 +68,7 @@ class CompanyCategoryViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = CompanyCategory.objects.filter(name__iexact=name, isDeleted=False)
+            exist = CompanyCategory.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "CompanyCategory with the same name already exists."}
@@ -126,7 +126,7 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = CompanyStatus.objects.filter(name__iexact=name, isDeleted=False)
+            exist = CompanyStatus.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "CompanyStatus with the same name already exists."}
@@ -253,7 +253,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = Company.objects.filter(name__iexact=name, isDeleted=False)
+            exist = Company.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "Company with the same name already exists."}

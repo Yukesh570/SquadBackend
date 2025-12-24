@@ -73,7 +73,7 @@ class SMPPViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         systemID = serializer.validated_data.get("systemID")
         if systemID != serializer.instance.systemID:
-            exist = SMPP.objects.filter(systemID__iexact=systemID, isDeleted=False)
+            exist = SMPP.objects.filter(systemID=systemID, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "SMPP with the same systemID already exists."}

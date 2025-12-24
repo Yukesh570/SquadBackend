@@ -93,7 +93,7 @@ class CustomRouteViewSet(viewsets.ModelViewSet):
         name = serializer.validated_data.get("name")
 
         if name != serializer.instance.name:
-            exist = CustomRoute.objects.filter(name__iexact=name, isDeleted=False)
+            exist = CustomRoute.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "CustomRoute with the same name already exists."}

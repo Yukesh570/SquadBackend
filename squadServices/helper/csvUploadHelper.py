@@ -1,5 +1,6 @@
 # squadServices/views/vendor_rate_import_view.py
 
+import json
 import uuid
 import os
 from rest_framework.decorators import api_view, permission_classes
@@ -13,7 +14,93 @@ from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 
 redis_client = redis.StrictRedis.from_url(os.getenv("CELERY_RESULT_BACKEND"))
 
-from squad.task import import_vendor_rate_task
+from squad.task import (
+    import_country_task,
+    import_operator_task,
+    import_vendor_rate_task,
+)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def country_csv(request):
+    """
+    Upload CSV and start Celery import task for Country model.
+    """
+
+    file = request.FILES.get("file")
+
+    if not file:
+        return Response({"error": "CSV file is required"}, status=400)
+    if not file.name.lower().endswith(".csv"):
+        return Response({"error": "Only CSV files are allowed"}, status=400)
+
+    if file.content_type not in [
+        "text/csv",
+        "application/vnd.ms-excel",
+    ]:
+        return Response(
+            {"error": "Invalid file type. Please upload a valid CSV file"}, status=400
+        )
+    # Save file temporarily
+    filename = f"country_{uuid.uuid4().hex}.csv"
+    temp_path = os.path.join(settings.MEDIA_ROOT, "imports")
+    os.makedirs(temp_path, exist_ok=True)
+    filepath = os.path.join(temp_path, filename)
+
+    with open(filepath, "wb") as out:
+        for chunk in file.chunks():
+            out.write(chunk)
+
+    task_id = uuid.uuid4().hex
+    print("Starting country import with task ID:", task_id)
+    # Trigger Celery task
+    import_country_task.apply_async(
+        args=[filepath, request.user.id, task_id], task_id=task_id
+    )
+
+    return Response({"message": "Import started", "task_id": task_id})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def operators_csv(request):
+    """
+    Upload CSV and start Celery import task for operator model.
+    """
+
+    file = request.FILES.get("file")
+    if not file:
+        return Response({"error": "CSV file is required"}, status=400)
+    if not file.name.lower().endswith(".csv"):
+        return Response({"error": "Only CSV files are allowed"}, status=400)
+
+    if file.content_type not in [
+        "text/csv",
+        "application/vnd.ms-excel",
+    ]:
+        return Response(
+            {"error": "Invalid file type. Please upload a valid CSV file"}, status=400
+        )
+
+    # Save file temporarily
+    filename = f"operator_{uuid.uuid4().hex}.csv"
+    temp_path = os.path.join(settings.MEDIA_ROOT, "imports")
+    os.makedirs(temp_path, exist_ok=True)
+    filepath = os.path.join(temp_path, filename)
+
+    with open(filepath, "wb") as out:
+        for chunk in file.chunks():
+            out.write(chunk)
+
+    task_id = uuid.uuid4().hex
+    print("Starting operator import with task ID:", task_id)
+    # Trigger Celery task
+    import_operator_task.apply_async(
+        args=[filepath, request.user.id, task_id], task_id=task_id
+    )
+
+    return Response({"message": "Import started", "task_id": task_id})
 
 
 @api_view(["POST"])
@@ -108,7 +195,18 @@ def vendor_rate_import_status(request, task_id):
     # If finished
     if progress == "100":
         final = redis_client.get(f"{task_id}_result")
-        final = final.decode() if final else "{}"
-        return Response({"status": "completed", "progress": 100, "result": final})
+        final_data = json.loads(final.decode() if final else "{}")
+
+        if final_data.get("errors"):
+            return Response(
+                {
+                    "status": "completed_with_errors",
+                    "progress": 100,
+                    "result": final_data,
+                },
+                status=400,
+            )
+
+        return Response({"status": "completed", "progress": 100, "result": final_data})
 
     return Response({"status": "running", "progress": int(progress)})

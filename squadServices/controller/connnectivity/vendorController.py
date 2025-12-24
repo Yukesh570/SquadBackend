@@ -63,9 +63,7 @@ class VendorViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         profileName = serializer.validated_data.get("profileName")
         if profileName != serializer.instance.profileName:
-            exist = Vendor.objects.filter(
-                profileName__iexact=profileName, isDeleted=False
-            )
+            exist = Vendor.objects.filter(profileName=profileName, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "Vendor with the same profileName already exists."}

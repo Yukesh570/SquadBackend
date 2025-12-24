@@ -74,9 +74,7 @@ class MappingSetupViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         ratePlan = serializer.validated_data.get("ratePlan")
         if ratePlan != serializer.instance.ratePlan:
-            exist = MappingSetup.objects.filter(
-                ratePlan__iexact=ratePlan, isDeleted=False
-            )
+            exist = MappingSetup.objects.filter(ratePlan=ratePlan, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "MappingSetup with the same ratePlan already exists."}

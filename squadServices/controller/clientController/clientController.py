@@ -65,7 +65,7 @@ class ClientViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = Client.objects.filter(name__iexact=name, isDeleted=False)
+            exist = Client.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "Client with the same name already exists."}

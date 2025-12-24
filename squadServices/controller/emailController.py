@@ -58,7 +58,7 @@ class EmailHostViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         if name != serializer.instance.name:
 
-            exist = EmailHost.objects.filter(name__iexact=name, isDeleted=False)
+            exist = EmailHost.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "EmailHost with this name already exists."}
@@ -116,7 +116,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
-            exist = EmailTemplate.objects.filter(name__iexact=name, isDeleted=False)
+            exist = EmailTemplate.objects.filter(name=name, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "EmailTemplate with the same name already exists."}

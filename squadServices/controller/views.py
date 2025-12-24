@@ -121,7 +121,7 @@ class NavItemViewSet(viewsets.ModelViewSet):
 
         label = serializer.validated_data.get("label")
         if label != serializer.instance.label:
-            exist = NavItem.objects.filter(label__iexact=label, isDeleted=False)
+            exist = NavItem.objects.filter(label=label, isDeleted=False)
             if exist.exists():
                 raise ValidationError(
                     {"error": "NavItem with the same name already exists."}
