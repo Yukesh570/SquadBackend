@@ -22,6 +22,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 from rest_framework.decorators import action
 from django.http import StreamingHttpResponse
+from django.db.models import Q
 
 import csv
 
@@ -142,82 +143,180 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
         instance.save()
 
 
-class CompanyFilter(django_filters.FilterSet):
-    name = django_filters.CharFilter(lookup_expr="icontains")
-    shortName = django_filters.CharFilter(lookup_expr="icontains")
-    phone = django_filters.CharFilter(lookup_expr="icontains")
-    companyEmail = django_filters.CharFilter(lookup_expr="icontains")
-    supportEmail = django_filters.CharFilter(lookup_expr="icontains")
-    billingEmail = django_filters.CharFilter(lookup_expr="icontains")
-    ratesEmail = django_filters.CharFilter(lookup_expr="icontains")
-    lowBalanceAlertEmail = django_filters.CharFilter(lookup_expr="icontains")
+class ExtendedFilterSet(django_filters.FilterSet):
+    """
+    Base FilterSet that adds 'Not Equals' (for all) and 'Does Not Contain' (for text)
+    capabilities to fields defined in the Meta class.
+    """
 
-    category_name = django_filters.CharFilter(
-        field_name="category__name", lookup_expr="icontains"
-    )
-    status_name = django_filters.CharFilter(
-        field_name="status__name", lookup_expr="icontains"
-    )
-    currency_name = django_filters.CharFilter(
-        field_name="currency__name", lookup_expr="icontains"
-    )
-    timeZone_name = django_filters.CharFilter(
-        field_name="timeZone__name", lookup_expr="icontains"
-    )
-    businessEntity = django_filters.CharFilter(
-        field_name="businessEntity__name", lookup_expr="icontains"
-    )
-    customerCreditLimit = django_filters.NumberFilter()
+    def __init__(self, data=None, queryset=None, *, request=None, prefix=None):
+        super().__init__(data, queryset, request=request, prefix=prefix)
 
-    vendorCreditLimit = django_filters.NumberFilter()
-    balanceAlertAmount = django_filters.NumberFilter()
-    referencNumber = django_filters.CharFilter(lookup_expr="icontains")
-    vatNumber = django_filters.CharFilter(lookup_expr="icontains")
-    address = django_filters.CharFilter(lookup_expr="icontains")
-    validityPeriod = django_filters.CharFilter(lookup_expr="icontains")
-    defaultEmail = django_filters.CharFilter(lookup_expr="icontains")
-    onlinePayment = django_filters.BooleanFilter()
-    companyBlocked = django_filters.BooleanFilter()
-    allowWhiteListedCards = django_filters.BooleanFilter()
-    sendDailyReports = django_filters.BooleanFilter()
-    allowNetting = django_filters.BooleanFilter()
-    sendMonthlyReports = django_filters.BooleanFilter()
-    showHlrApi = django_filters.BooleanFilter()
-    enableVendorPanel = django_filters.BooleanFilter()
+        # Dynamically add negative filters, but ONLY for the 'exact' lookups
+        # This prevents creating duplicate/redundant filters for range/gt/lt/icontains fields
+        for field_name, field in self.base_filters.items():
+
+            # Only extend the "base" fields (where lookup_expr is exact or default)
+            if getattr(field, "lookup_expr", "exact") == "exact":
+
+                # 1. Add "Not Equals" (__ne) to almost all types
+                if not isinstance(
+                    field, (django_filters.BooleanFilter, django_filters.BaseCSVFilter)
+                ):
+                    self.filters[f"{field_name}__ne"] = self._copy_filter(
+                        field, method="filter_not_equals", label_suffix="Not Equals"
+                    )
+
+                # 2. Add "Does Not Contain" (__not_contains) ONLY to Text fields
+                if isinstance(field, django_filters.CharFilter):
+                    self.filters[f"{field_name}__not_contains"] = self._copy_filter(
+                        field,
+                        method="filter_does_not_contain",
+                        label_suffix="Does Not Contain",
+                    )
+
+    def _copy_filter(self, original_field, method, label_suffix):
+        """Helper to copy a filter configuration but change the method."""
+        new_filter = type(original_field)(
+            field_name=original_field.field_name,
+            method=method,
+            label=f"{original_field.label or original_field.field_name} {label_suffix}",
+        )
+        # CRITICAL FIX: Manually bind the filter to the current FilterSet instance.
+        # Without this, string methods (like "filter_not_equals") fail because the
+        # filter doesn't know who its parent is.
+        new_filter.parent = self
+        return new_filter
+
+    def filter_not_equals(self, queryset, name, value):
+        """Excludes exact matches"""
+        # The 'name' argument passed here is the MODEL FIELD NAME (e.g. 'shortName'),
+        # not the filter name, because _copy_filter explicitly sets field_name.
+        # So we do NOT need to slice it (name[:-4] was causing 'shortName' -> 'short').
+
+        # FIX: Strip whitespace from value to handle "GECKO " vs "GECKO" mismatches
+        if isinstance(value, str):
+            value = value.strip()
+
+        return queryset.exclude(**{name: value})
+
+    def filter_does_not_contain(self, queryset, name, value):
+        """Excludes partial matches"""
+        # The 'name' argument passed here is the MODEL FIELD NAME.
+        # Ensure we target the icontains lookup for the exclusion
+        lookup = f"{name}__icontains"
+        return queryset.exclude(**{lookup: value})
+
+
+class CompanyFilter(ExtendedFilterSet):
+    search = django_filters.CharFilter(method="dynamic_search")
+
+    # 👇 whitelist allowed searchable fields
+    ALLOWED_SEARCH_FIELDS = {
+        "name": "name__icontains",
+        "shortName": "shortName__icontains",
+        "phone": "phone__icontains",
+        "companyEmail": "companyEmail__icontains",
+        "supportEmail": "supportEmail__icontains",
+        "billingEmail": "billingEmail__icontains",
+        "ratesEmail": "ratesEmail__icontains",
+        "lowBalanceAlertEmail": "lowBalanceAlertEmail__icontains",
+        "address": "address__icontains",
+        "referencNumber": "referencNumber__icontains",
+        "vatNumber": "vatNumber__icontains",
+        "category": "category__name__icontains",
+        "status": "status__name__icontains",
+        "currency": "currency__name__icontains",
+        "timeZone": "timeZone__name__icontains",
+        "businessEntity": "businessEntity__name__icontains",
+    }
+
+    def dynamic_search(self, queryset, name, value):
+        request = self.request
+        fields_param = request.query_params.get("search_fields")
+
+        # Default → global search
+        if not fields_param:
+            fields = self.ALLOWED_SEARCH_FIELDS.values()
+        else:
+            fields = [
+                self.ALLOWED_SEARCH_FIELDS[f.strip()]
+                for f in fields_param.split(",")
+                if f.strip() in self.ALLOWED_SEARCH_FIELDS
+            ]
+
+        q = Q()
+        for lookup in fields:
+            q |= Q(**{lookup: value})
+
+        return queryset.filter(q)
 
     class Meta:
         model = Company
-        fields = [
-            "name",
-            "shortName",
-            "phone",
-            "companyEmail",
-            "supportEmail",
-            "billingEmail",
-            "ratesEmail",
-            "lowBalanceAlertEmail",
-            "category_name",
-            "status_name",
-            "currency_name",
-            "timeZone_name",
-            "businessEntity",
-            "customerCreditLimit",
-            "vendorCreditLimit",
-            "balanceAlertAmount",
-            "referencNumber",
-            "vatNumber",
-            "address",
-            "validityPeriod",
-            "defaultEmail",
-            "onlinePayment",
-            "companyBlocked",
-            "allowWhiteListedCards",
-            "sendDailyReports",
-            "allowNetting",
-            "sendMonthlyReports",
-            "showHlrApi",
-            "enableVendorPanel",
-        ]
+        fields = []  # filtering done manually
+
+
+# class CompanyFilter(ExtendedFilterSet):
+#     # Keep your global search
+#     search = django_filters.CharFilter(method="global_search")
+
+#     class Meta:
+#         model = Company
+#         # Define the fields and their allowed standard lookups
+#         fields = {
+#             # TEXT FIELDS: Support Equals, Contains, Is Empty
+#             "name": ["exact", "icontains", "isnull"],
+#             "shortName": ["exact", "icontains", "isnull"],
+#             "phone": ["exact", "icontains"],
+#             "companyEmail": ["exact", "icontains"],
+#             "supportEmail": ["exact", "icontains"],
+#             "billingEmail": ["exact", "icontains"],
+#             "ratesEmail": ["exact", "icontains"],
+#             "lowBalanceAlertEmail": ["exact", "icontains"],
+#             "address": ["exact", "icontains"],
+#             "referencNumber": ["exact", "icontains"],
+#             "vatNumber": ["exact", "icontains"],
+#             # RELATIONSHIP FIELDS:
+#             "category__name": ["exact", "icontains"],
+#             "status__name": ["exact", "icontains"],
+#             "currency__name": ["exact", "icontains"],
+#             "timeZone__name": ["exact", "icontains"],
+#             "businessEntity__name": ["exact", "icontains"],
+#             # NUMERIC FIELDS: Support Equals, GT, LT, Range (Between)
+#             "customerCreditLimit": ["exact", "gt", "lt", "range", "isnull"],
+#             "vendorCreditLimit": ["exact", "gt", "lt", "range"],
+#             "balanceAlertAmount": ["exact", "gt", "lt", "range"],
+#             # DATE FIELDS: Support Exact, Range (Between), GT, LT
+#             "createdAt": ["exact", "range", "gt", "lt"],
+#             # BOOLEAN FIELDS
+#             "onlinePayment": ["exact"],
+#             "companyBlocked": ["exact"],
+#             "allowWhiteListedCards": ["exact"],
+#             "sendDailyReports": ["exact"],
+#             "allowNetting": ["exact"],
+#             "showHlrApi": ["exact"],
+#             "enableVendorPanel": ["exact"],
+#         }
+
+#     def global_search(self, queryset, name, value):
+#         return queryset.filter(
+#             Q(name__icontains=value)
+#             | Q(shortName__icontains=value)
+#             | Q(phone__icontains=value)
+#             | Q(companyEmail__icontains=value)
+#             | Q(supportEmail__icontains=value)
+#             | Q(billingEmail__icontains=value)
+#             | Q(ratesEmail__icontains=value)
+#             | Q(lowBalanceAlertEmail__icontains=value)
+#             | Q(referencNumber__icontains=value)
+#             | Q(vatNumber__icontains=value)
+#             | Q(address__icontains=value)
+#             | Q(category__name__icontains=value)
+#             | Q(status__name__icontains=value)
+#             | Q(currency__name__icontains=value)
+#             | Q(timeZone__name__icontains=value)
+#             | Q(businessEntity__name__icontains=value)
+#         )
 
 
 class CompanyViewSet(viewsets.ModelViewSet):

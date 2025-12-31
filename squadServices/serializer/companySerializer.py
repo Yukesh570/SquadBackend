@@ -49,4 +49,5 @@ class CompanySerializer(serializers.ModelSerializer):
             "allowNetting",
             "showHlrApi",
             "enableVendorPanel",
+            "createdAt",
         ]
