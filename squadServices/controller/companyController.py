@@ -167,13 +167,16 @@ class ExtendedFilterSet(django_filters.FilterSet):
                         field, method="filter_not_equals", label_suffix="Not Equals"
                     )
 
-                # 2. Add "Does Not Contain" (__not_contains) ONLY to Text fields
-                if isinstance(field, django_filters.CharFilter):
-                    self.filters[f"{field_name}__not_contains"] = self._copy_filter(
-                        field,
-                        method="filter_does_not_contain",
-                        label_suffix="Does Not Contain",
-                    )
+                    # 2. Add "Does Not Contain" (__not_contains) ONLY to Text fields
+                    if (
+                        isinstance(field, django_filters.CharFilter)
+                        and getattr(field, "lookup_expr", "exact") == "exact"
+                    ):
+                        self.filters[f"{field_name}__not_contains"] = self._copy_filter(
+                            field,
+                            method="filter_does_not_contain",
+                            label_suffix="Does Not Contain",
+                        )
 
     def _copy_filter(self, original_field, method, label_suffix):
         """Helper to copy a filter configuration but change the method."""
@@ -209,114 +212,46 @@ class ExtendedFilterSet(django_filters.FilterSet):
 
 
 class CompanyFilter(ExtendedFilterSet):
-    search = django_filters.CharFilter(method="dynamic_search")
-
-    # 👇 whitelist allowed searchable fields
-    ALLOWED_SEARCH_FIELDS = {
-        "name": "name__icontains",
-        "shortName": "shortName__icontains",
-        "phone": "phone__icontains",
-        "companyEmail": "companyEmail__icontains",
-        "supportEmail": "supportEmail__icontains",
-        "billingEmail": "billingEmail__icontains",
-        "ratesEmail": "ratesEmail__icontains",
-        "lowBalanceAlertEmail": "lowBalanceAlertEmail__icontains",
-        "address": "address__icontains",
-        "referencNumber": "referencNumber__icontains",
-        "vatNumber": "vatNumber__icontains",
-        "category": "category__name__icontains",
-        "status": "status__name__icontains",
-        "currency": "currency__name__icontains",
-        "timeZone": "timeZone__name__icontains",
-        "businessEntity": "businessEntity__name__icontains",
-    }
-
-    def dynamic_search(self, queryset, name, value):
-        request = self.request
-        fields_param = request.query_params.get("search_fields")
-
-        # Default → global search
-        if not fields_param:
-            fields = self.ALLOWED_SEARCH_FIELDS.values()
-        else:
-            fields = [
-                self.ALLOWED_SEARCH_FIELDS[f.strip()]
-                for f in fields_param.split(",")
-                if f.strip() in self.ALLOWED_SEARCH_FIELDS
-            ]
-
-        q = Q()
-        for lookup in fields:
-            q |= Q(**{lookup: value})
-
-        return queryset.filter(q)
+    # Keep your global search
+    #     search = django_filters.CharFilter(method="global_search")
 
     class Meta:
         model = Company
-        fields = []  # filtering done manually
-
-
-# class CompanyFilter(ExtendedFilterSet):
-#     # Keep your global search
-#     search = django_filters.CharFilter(method="global_search")
-
-#     class Meta:
-#         model = Company
-#         # Define the fields and their allowed standard lookups
-#         fields = {
-#             # TEXT FIELDS: Support Equals, Contains, Is Empty
-#             "name": ["exact", "icontains", "isnull"],
-#             "shortName": ["exact", "icontains", "isnull"],
-#             "phone": ["exact", "icontains"],
-#             "companyEmail": ["exact", "icontains"],
-#             "supportEmail": ["exact", "icontains"],
-#             "billingEmail": ["exact", "icontains"],
-#             "ratesEmail": ["exact", "icontains"],
-#             "lowBalanceAlertEmail": ["exact", "icontains"],
-#             "address": ["exact", "icontains"],
-#             "referencNumber": ["exact", "icontains"],
-#             "vatNumber": ["exact", "icontains"],
-#             # RELATIONSHIP FIELDS:
-#             "category__name": ["exact", "icontains"],
-#             "status__name": ["exact", "icontains"],
-#             "currency__name": ["exact", "icontains"],
-#             "timeZone__name": ["exact", "icontains"],
-#             "businessEntity__name": ["exact", "icontains"],
-#             # NUMERIC FIELDS: Support Equals, GT, LT, Range (Between)
-#             "customerCreditLimit": ["exact", "gt", "lt", "range", "isnull"],
-#             "vendorCreditLimit": ["exact", "gt", "lt", "range"],
-#             "balanceAlertAmount": ["exact", "gt", "lt", "range"],
-#             # DATE FIELDS: Support Exact, Range (Between), GT, LT
-#             "createdAt": ["exact", "range", "gt", "lt"],
-#             # BOOLEAN FIELDS
-#             "onlinePayment": ["exact"],
-#             "companyBlocked": ["exact"],
-#             "allowWhiteListedCards": ["exact"],
-#             "sendDailyReports": ["exact"],
-#             "allowNetting": ["exact"],
-#             "showHlrApi": ["exact"],
-#             "enableVendorPanel": ["exact"],
-#         }
-
-#     def global_search(self, queryset, name, value):
-#         return queryset.filter(
-#             Q(name__icontains=value)
-#             | Q(shortName__icontains=value)
-#             | Q(phone__icontains=value)
-#             | Q(companyEmail__icontains=value)
-#             | Q(supportEmail__icontains=value)
-#             | Q(billingEmail__icontains=value)
-#             | Q(ratesEmail__icontains=value)
-#             | Q(lowBalanceAlertEmail__icontains=value)
-#             | Q(referencNumber__icontains=value)
-#             | Q(vatNumber__icontains=value)
-#             | Q(address__icontains=value)
-#             | Q(category__name__icontains=value)
-#             | Q(status__name__icontains=value)
-#             | Q(currency__name__icontains=value)
-#             | Q(timeZone__name__icontains=value)
-#             | Q(businessEntity__name__icontains=value)
-#         )
+        # Define the fields and their allowed standard lookups
+        fields = {
+            # TEXT FIELDS: Support Equals, Contains, Is Empty
+            "name": ["exact", "icontains", "isnull"],
+            "shortName": ["exact", "icontains", "isnull"],
+            "phone": ["exact", "icontains"],
+            "companyEmail": ["exact", "icontains"],
+            "supportEmail": ["exact", "icontains"],
+            "billingEmail": ["exact", "icontains"],
+            "ratesEmail": ["exact", "icontains"],
+            "lowBalanceAlertEmail": ["exact", "icontains"],
+            "address": ["exact", "icontains"],
+            "referencNumber": ["exact", "icontains"],
+            "vatNumber": ["exact", "icontains"],
+            # RELATIONSHIP FIELDS:
+            "category__name": ["exact", "icontains"],
+            "status__name": ["exact", "icontains"],
+            "currency__name": ["exact", "icontains"],
+            "timeZone__name": ["exact", "icontains"],
+            "businessEntity__name": ["exact", "icontains"],
+            # NUMERIC FIELDS: Support Equals, GT, LT, Range (Between)
+            "customerCreditLimit": ["exact", "gt", "lt", "range", "isnull"],
+            "vendorCreditLimit": ["exact", "gt", "lt", "range"],
+            "balanceAlertAmount": ["exact", "gt", "lt", "range"],
+            # DATE FIELDS: Support Exact, Range (Between), GT, LT
+            "createdAt": ["exact", "range", "gt", "lt"],
+            # BOOLEAN FIELDS
+            "onlinePayment": ["exact"],
+            "companyBlocked": ["exact"],
+            "allowWhiteListedCards": ["exact"],
+            "sendDailyReports": ["exact"],
+            "allowNetting": ["exact"],
+            "showHlrApi": ["exact"],
+            "enableVendorPanel": ["exact"],
+        }
 
 
 class CompanyViewSet(viewsets.ModelViewSet):
