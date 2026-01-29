@@ -24,8 +24,6 @@ from rest_framework.decorators import action
 from django.http import StreamingHttpResponse
 from django.db.models import Q
 
-import csv
-
 
 class CompanyCategoryFilter(django_filters.FilterSet):
     name = django_filters.CharFilter(lookup_expr="icontains")
@@ -232,6 +230,7 @@ class CompanyFilter(ExtendedFilterSet):
             "referencNumber": ["exact", "icontains"],
             "vatNumber": ["exact", "icontains"],
             # RELATIONSHIP FIELDS:
+            "country__name": ["exact", "icontains"],
             "category__name": ["exact", "icontains"],
             "status__name": ["exact", "icontains"],
             "currency__name": ["exact", "icontains"],
