@@ -3,6 +3,7 @@ from rest_framework import viewsets, permissions
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 
+from django.db.models import Q
 
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
@@ -55,9 +56,14 @@ class ClientViewSet(viewsets.ModelViewSet):
         user = self.request.user
         check_permission(self, "write", module)
         name = serializer.validated_data.get("name")
-        exist = Client.objects.filter(name__iexact=name, isDeleted=False)
+        smppUsername = serializer.validated_data.get("smppUsername")
+        exist = Client.objects.filter(
+            Q(name__iexact=name) | Q(smppUsername__iexact=smppUsername), isDeleted=False
+        )
         if exist.exists():
-            raise ValidationError({"error": "Client with this name already exists."})
+            raise ValidationError(
+                {"error": "Client with this name or smppUsername already exists."}
+            )
         serializer.save(createdBy=user, updatedBy=user)
 
     def perform_update(self, serializer):

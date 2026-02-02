@@ -82,6 +82,30 @@ services:
       - "15672:15672" # management UI
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+  smpp-server:
+    build: .
+    container_name: squad-smpp-server
+    command: python manage.py smpp_server
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - rabbitmq
+    ports:
+      - "2775:2775" # Open SMPP port to the world
+    restart: always
+
+  # --- SMPP Manager (Processes Outgoing SMS Queue) ---
+  smpp-manager:
+    build: .
+    container_name: squad-smpp-manager
+    command: python manage.py newRunSmpp
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - rabbitmq
+    restart: always
 
 volumes:
   postgres_data:

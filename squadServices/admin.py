@@ -16,6 +16,7 @@ from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.routeManager.customRoute import CustomRoute
+from squadServices.models.smpp.smppSMS import SMSMessage
 from squadServices.models.users import User, UserLoginHistory
 
 
@@ -280,6 +281,7 @@ class vendorAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "company",
+        "smpp",
         "profileName",
         "connectionType",
         "isDeleted",
@@ -296,6 +298,7 @@ class clientAdmin(admin.ModelAdmin):
         "id",
         "name",
         "company",
+        "smppUsername",
         "status",
         "route",
         "paymentTerms",
@@ -397,7 +400,8 @@ class CustomRouteAdmin(admin.ModelAdmin):
         "id",
         "name",
         "status",
-        "MNC",
+        "orginatingClient",
+        "terminatingVendor",
         "isDeleted",
         "createdAt",
         "updatedAt",
@@ -405,6 +409,23 @@ class CustomRouteAdmin(admin.ModelAdmin):
     search_fields = ("name", "status")
     readonly_fields = ("createdAt", "updatedAt")
 
+
+class SMSMessageAdmin(admin.ModelAdmin):
+    model = SMSMessage
+    list_display = (
+        "id",
+        "text",
+        "status",
+        "message_id",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("text", "status")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+admin.site.register(CustomRoute, CustomRouteAdmin)
 
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)
@@ -433,3 +454,4 @@ admin.site.register(Network, NetworkAdmin)
 admin.site.register(MappingSetup, MappingSetupAdmin)
 admin.site.register(Operators, OperatorsAdmin)
 admin.site.register(UserLoginHistory, UserLoginHistoryAdmin)
+admin.site.register(SMSMessage, SMSMessageAdmin)

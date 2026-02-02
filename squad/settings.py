@@ -38,7 +38,8 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 INSTALLED_APPS = [
     "rest_framework_simplejwt",
-    "squadServices",
+    "squadServices.apps.SquadServicesConfig",
+    # "squadServices",
     "rest_framework",
     "corsheaders",
     "drf_spectacular",
