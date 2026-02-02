@@ -76,7 +76,7 @@ class Client(models.Model):
 
     class Meta:
         ordering = ["-updatedAt"]
-        db_table = "squadservices_client"  # Add this line
+        db_table = "squadServices_client"  # Add this line
 
     def __str__(self):
         return self.name
