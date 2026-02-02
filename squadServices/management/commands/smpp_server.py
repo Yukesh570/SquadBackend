@@ -53,7 +53,7 @@ class Command(BaseCommand):
             client = Client.objects.filter(
                 smppUsername=username, smppPassword=password
             ).first()  # Get the actual object, not just True/False
-
+            print("smpp client:::::::", client)
             if not client:
                 return None, None, None
 
@@ -120,6 +120,7 @@ class Command(BaseCommand):
                 ]:
                     system_id, offset = self.read_c_string(body_data, 0)
                     password, offset = self.read_c_string(body_data, offset)
+                    print("system_id,password:::::::", system_id, password)
 
                     client_obj, vendor_obj, smpp_obj = (
                         await self.authenticate_and_get_route(system_id, password)

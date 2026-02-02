@@ -66,6 +66,7 @@ class CustomRoute(models.Model):
 
     class Meta:
         ordering = ["-updatedAt"]
+        db_table = "squadServices_customroute"
 
     def __str__(self):
         return self.name

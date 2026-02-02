@@ -63,4 +63,4 @@ class SMSMessage(models.Model):
     class Meta:
         # Force Django to look for the lowercase table in Postgres
         # while keeping the app label as 'squadServices'
-        db_table = "squadervices_smsmessage"
+        db_table = "squadServices_smsmessage"
