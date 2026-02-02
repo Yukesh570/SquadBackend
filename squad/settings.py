@@ -171,7 +171,7 @@ TIME_ZONE = "Asia/Kathmandu"
 USE_I18N = True
 
 USE_TZ = True
-AUTH_USER_MODEL = "squadServices.User"
+AUTH_USER_MODEL = "squadservices.User"
 
 
 # Media files
