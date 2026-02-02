@@ -59,3 +59,8 @@ class SMSMessage(models.Model):
 
     def __str__(self):
         return f"{self.destination} - {self.status}"
+
+    class Meta:
+        # Force Django to look for the lowercase table in Postgres
+        # while keeping the app label as 'squadServices'
+        db_table = "squadservices_smsmessage"
