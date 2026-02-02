@@ -55,7 +55,7 @@ class Command(BaseCommand):
             ).first()  # Get the actual object, not just True/False
 
             if not client:
-                return None, None
+                return None, None, None
 
             # 2. Find the CustomRoute for this Client
             # We look for an active route that isn't deleted
@@ -71,11 +71,11 @@ class Command(BaseCommand):
             if route and route.terminatingVendor.smpp.id:
                 return client, route.terminatingVendor, route.terminatingVendor.smpp
 
-            return client, None  # Client is valid, but no route/vendor found
+            return client, None, None  # Client is valid, but no route/vendor found
 
         except Exception as e:
             logger.error(f"Auth/Route Lookup Error: {e}")
-            return None, None
+            return None, None, None
 
     def handle(self, *args, **kwargs):
         self.stdout.write(f"Starting SMPP Server on {HOST}:{PORT}...")
