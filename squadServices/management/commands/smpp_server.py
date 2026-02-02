@@ -120,7 +120,7 @@ class Command(BaseCommand):
                 ]:
                     system_id, offset = self.read_c_string(body_data, 0)
                     password, offset = self.read_c_string(body_data, offset)
-                    print("system_id,password:::::::", system_id, password)
+                    print("credential", system_id, password)
 
                     client_obj, vendor_obj, smpp_obj = (
                         await self.authenticate_and_get_route(system_id, password)
@@ -266,11 +266,20 @@ class Command(BaseCommand):
         await writer.drain()
 
     def read_c_string(self, data, offset):
-        """Helper to read C-Style null-terminated strings"""
-        end = data.find(b"\0", offset)
-        if end == -1:
-            return "", len(data)
-        return data[offset:end].decode("ascii", errors="ignore"), end + 1
+        """Helper to read C-Style null-terminated strings correctly"""
+        # Slice from the current offset to the end
+        fragment = data[offset:]
+
+        # Find the first null byte in this fragment
+        end_idx = fragment.find(b"\0")
+
+        if end_idx == -1:
+            # If no null byte found, take the whole remaining data
+            return fragment.decode("ascii", errors="ignore"), len(data)
+
+        # Extract the string, decode it, and move the offset past the null byte
+        result = fragment[:end_idx].decode("ascii", errors="ignore")
+        return result, offset + end_idx + 1
 
     def extract_c_string(self, data, offset):
         val, _ = self.read_c_string(data, offset)
