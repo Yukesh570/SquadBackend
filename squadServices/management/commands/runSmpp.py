@@ -24,7 +24,7 @@ class Command(BaseCommand):
         port = 7210
         system_id = "AAMI_DIR1"
         password = "CD9RQ4uj"
-        # ---------------------
+        # --------------------
 
         self.stdout.write(f"Starting SMPP Client for {system_id} on {ip}:{port}...")
 
