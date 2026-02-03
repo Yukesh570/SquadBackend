@@ -47,6 +47,7 @@ from squadServices.controller.rateManagementController.customerRateController im
 from squadServices.controller.routeManagerController.customRouteController import (
     CustomRouteViewSet,
 )
+from squadServices.controller.smppSMSController.smppSMSController import SmppSMSViewSet
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
@@ -516,6 +517,25 @@ urlpatterns = [
     path(
         "network/<str:module>/<int:pk>/",
         NetworkViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "smppSMS/<str:module>/",
+        SmppSMSViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "smppSMS/<str:module>/<int:pk>/",
+        SmppSMSViewSet.as_view(
             {
                 "put": "update",
                 "patch": "partial_update",
