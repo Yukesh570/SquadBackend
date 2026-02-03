@@ -92,7 +92,6 @@ class Command(BaseCommand):
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info("peername")
         logger.info(f"New connection from {addr}")
-        print(f"DEBUG BODY HEX: {body_data.hex()}")
         try:
             while True:
                 # 1. Read SMPP Header (16 bytes)
