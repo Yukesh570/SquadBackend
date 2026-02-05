@@ -13,7 +13,10 @@ from squadServices.controller.campaignController import (
     CampaignViewSet,
     TemplateViewSet,
 )
-from squadServices.controller.clientController.clientController import ClientViewSet
+from squadServices.controller.clientController.clientController import (
+    ClientViewSet,
+    IpWhiteListViewSet,
+)
 from squadServices.controller.companyController import (
     CompanyCategoryViewSet,
     CompanyStatusViewSet,
@@ -286,6 +289,27 @@ urlpatterns = [
     path(
         "client/<str:module>/<int:pk>/",
         ClientViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="client",
+    ),
+    path(
+        "IPWhiteList/<str:module>/",
+        IpWhiteListViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="client",
+    ),
+    path(
+        "IPWhiteList/<str:module>/<int:pk>/",
+        IpWhiteListViewSet.as_view(
             {
                 "put": "update",
                 "patch": "partial_update",

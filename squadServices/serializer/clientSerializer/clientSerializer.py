@@ -1,4 +1,4 @@
-from squadServices.models.clientModel.client import Client
+from squadServices.models.clientModel.client import Client, IpWhitelist
 
 from rest_framework import serializers
 
@@ -26,3 +26,17 @@ class ClientSerializer(serializers.ModelSerializer):
             "createdAt",
         ]
         # extra_kwargs = {"smppPassword": {"write_only": True}}
+
+
+class IpWhitelistSerializer(serializers.ModelSerializer):
+    clientName = serializers.CharField(source="client.name", read_only=True)
+
+    class Meta:
+        model = IpWhitelist
+        fields = [
+            "id",
+            "ip",
+            "client",
+            "clientName",
+            "createdAt",
+        ]

@@ -53,7 +53,6 @@ class Client(models.Model):
         max_digits=18, decimal_places=4, default=0.00
     )
     allowNetting = models.BooleanField(default=False)
-    ipWhitelist = models.JSONField(default=list, blank=True)
     smppUsername = models.CharField(max_length=255)
     smppPassword = models.CharField(max_length=255)
     internalNotes = models.TextField(null=True, blank=True)
@@ -80,3 +79,32 @@ class Client(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class IpWhitelist(models.Model):
+    # protocol="both" allows both IPv4 and IPv6
+    ip = models.GenericIPAddressField(protocol="both", unpack_ipv4=True)
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="ipWhitelist"
+    )
+    isDeleted = models.BooleanField(default=False)
+    createdBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="clientIpWhiteList_created",
+    )
+    createdAt = models.DateTimeField(auto_now_add=True, null=True)
+    updatedBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="clientIpWhiteList_updated",
+    )
+    updatedAt = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        db_table = "squadServices_ipwhitelist"
+
+    def __str__(self):
+        return f"{self.client.name} - {self.ip}"

@@ -9,8 +9,11 @@ from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
-from squadServices.models.clientModel.client import Client
-from squadServices.serializer.clientSerializer.clientSerializer import ClientSerializer
+from squadServices.models.clientModel.client import Client, IpWhitelist
+from squadServices.serializer.clientSerializer.clientSerializer import (
+    ClientSerializer,
+    IpWhitelistSerializer,
+)
 
 
 class ClientFilter(django_filters.FilterSet):
@@ -76,6 +79,57 @@ class ClientViewSet(viewsets.ModelViewSet):
                 raise ValidationError(
                     {"error": "Client with the same name already exists."}
                 )
+        user = self.request.user
+        serializer.save(updatedBy=user)
+
+    def perform_destroy(self, instance):
+        module = self.kwargs.get("module")
+        check_permission(self, "delete", module)
+        user = self.request.user
+        instance.isDeleted = True
+        instance.updatedBy = user
+        instance.save()
+
+
+class IpWhitelistFilter(django_filters.FilterSet):
+    ip = django_filters.CharFilter(lookup_expr="icontains")
+    clientName = django_filters.CharFilter(
+        field_name="client__name", lookup_expr="icontains"
+    )
+
+    createdAt = django_filters.DateFromToRangeFilter()
+
+    class Meta:
+        model = IpWhitelist
+        fields = [
+            "ip",
+            "clientName",
+            "createdAt",
+        ]
+
+
+class IpWhiteListViewSet(viewsets.ModelViewSet):
+    serializer_class = IpWhitelistSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = IpWhitelistFilter
+
+    def get_queryset(self):
+        module = self.kwargs.get("module")
+        check_permission(self, "read", module)
+        return IpWhitelist.objects.filter(isDeleted=False)
+
+    def perform_create(self, serializer):
+        module = self.kwargs.get("module")
+        user = self.request.user
+        check_permission(self, "write", module)
+        serializer.save(createdBy=user, updatedBy=user)
+
+    def perform_update(self, serializer):
+        module = self.kwargs.get("module")
+        check_permission(self, "put", module)
+
         user = self.request.user
         serializer.save(updatedBy=user)
 

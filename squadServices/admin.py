@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
 from squadServices.models.campaign import Campaign, CampaignContact, Template
-from squadServices.models.clientModel.client import Client
+from squadServices.models.clientModel.client import Client, IpWhitelist
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
 
 from squadServices.models.connectivityModel.smpp import SMPP
@@ -425,7 +425,21 @@ class SMSMessageAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
+class IpWhiteListAdmin(admin.ModelAdmin):
+    model = IpWhitelist
+    list_display = (
+        "id",
+        "ip",
+        "isDeleted",
+        "createdAt",
+        "updatedAt",
+    )
+    search_fields = ("ip",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+
 admin.site.register(CustomRoute, CustomRouteAdmin)
+admin.site.register(IpWhitelist, IpWhiteListAdmin)
 
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)

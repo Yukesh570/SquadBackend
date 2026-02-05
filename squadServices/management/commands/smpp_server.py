@@ -5,7 +5,7 @@ import struct
 import logging
 from django.core.management.base import BaseCommand
 from asgiref.sync import sync_to_async
-from squadServices.models.clientModel.client import Client
+from squadServices.models.clientModel.client import Client, IpWhitelist
 from squadServices.models.connectivityModel.smpp import SMPP
 
 from squadServices.models.connectivityModel.verdor import Vendor
@@ -40,6 +40,16 @@ logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = "Runs a lightweight SMPP Server to receive SMS"
+
+    @sync_to_async
+    def check_ip_whitelist(self, ip_address, client_obj=None):
+        """
+        If client_obj is provided, check if the IP belongs to that specific client.
+        Otherwise, check if the IP is whitelisted at all.
+        """
+        if client_obj:
+            return IpWhitelist.objects.filter(ip=ip_address, client=client_obj).exists()
+        return IpWhitelist.objects.filter(ip=ip_address).exists()
 
     # Get all the smppuser from smpp database
     @sync_to_async
@@ -91,27 +101,25 @@ class Command(BaseCommand):
 
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info("peername")
+        client_ip = addr[0]
         logger.info(f"New connection from {addr}")
+
         try:
             while True:
-                # 1. Read SMPP Header (16 bytes)
+                # 1. Read SMPP Header
                 header_data = await reader.read(16)
                 if not header_data or len(header_data) < 16:
                     break
 
-                # Unpack Header: Length, Command ID, Status, Sequence
                 cmd_len, cmd_id, cmd_status, seq_num = struct.unpack(
                     ">IIII", header_data
                 )
 
-                # 2. Read Body (Length - 16 bytes header)
+                # 2. Read Body
                 body_len = cmd_len - 16
                 body_data = await reader.read(body_len) if body_len > 0 else b""
 
-                # 3. Process Command
-                resp_id = cmd_id | 0x80000000  # Generic response ID logic
-                resp_body = b""
-
+                # 3. Handle BIND Commands
                 if cmd_id in [
                     CMD_BIND_RECEIVER,
                     CMD_BIND_TRANSMITTER,
@@ -119,30 +127,47 @@ class Command(BaseCommand):
                 ]:
                     system_id, offset = self.read_c_string(body_data, 0)
                     password, offset = self.read_c_string(body_data, offset)
-                    print("credential", system_id, password)
+                    print(f"Auth attempt: {system_id} from {client_ip}")
 
+                    # NOW we can authenticate because system_id and password exist
                     client_obj, vendor_obj, smpp_obj = (
                         await self.authenticate_and_get_route(system_id, password)
                     )
+
                     if client_obj:
-                        # SUCCESS: Mark this connection as authenticated
+                        # Check IP Whitelist for this specific client
+                        is_whitelisted = await self.check_ip_whitelist(
+                            client_ip, client_obj=client_obj
+                        )
+
+                        if not is_whitelisted:
+                            logger.warning(
+                                f"Blocking {system_id}: IP {client_ip} not whitelisted."
+                            )
+                            # Send Bind Failed (0x0D) and close
+                            await self.send_pdu(
+                                writer, cmd_id | 0x80000000, 0x0000000D, seq_num, b""
+                            )
+                            writer.close()
+                            return
+
+                        # SUCCESS
                         writer.is_authenticated = True
-                        writer.client_obj = client_obj  # Store for logging later
+                        writer.client_obj = client_obj
                         writer.vendor_obj = vendor_obj
                         writer.smpp_obj = smpp_obj
-                        logger.info(f"Auth Success: {system_id}")
+
                         resp_body = system_id.encode("ascii") + b"\0"
                         await self.send_pdu(
-                            writer, resp_id, ESME_ROK, seq_num, resp_body
+                            writer, cmd_id | 0x80000000, ESME_ROK, seq_num, resp_body
                         )
+                        logger.info(f"Auth Success: {system_id}")
                     else:
-                        # FAILURE: Mark as NOT authenticated
-                        writer.is_authenticated = False
-
+                        # AUTH FAILURE
                         logger.warning(f"Auth Failed: {system_id}")
-                        await self.send_pdu(writer, resp_id, 0x0000000F, seq_num, b"")
-
-                        # PRO-TIP: Close the connection immediately on bad login
+                        await self.send_pdu(
+                            writer, cmd_id | 0x80000000, 0x0000000F, seq_num, b""
+                        )
                         writer.close()
                         return
                 elif cmd_id == CMD_SUBMIT_SM:
