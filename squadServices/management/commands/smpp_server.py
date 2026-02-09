@@ -1,6 +1,7 @@
 # myapp/management/commands/run_smpp_server.py
 import asyncio
 from csv import writer
+import math
 import struct
 import logging
 from django.core.management.base import BaseCommand
@@ -40,6 +41,34 @@ logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = "Runs a lightweight SMPP Server to receive SMS"
+
+    def detect_encoding(self, text):
+        """Detect if text is GSM-7 compatible or requires UCS-2"""
+        gsm7_basic = (
+            "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ\x1bÆæßÉ !\"#¤%&'()*+,-./"
+            "0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§"
+            "¿abcdefghijklmnopqrstuvwxyzäöñüà"
+        )
+        gsm7_ext = "^{}\\[~]|€"
+
+        for char in text:
+            if char not in gsm7_basic and char not in gsm7_ext:
+                return "UCS-2"
+        return "GSM-7"
+
+    def calculate_segments(self, text, encoding):
+        length = len(text)
+
+        if encoding == "GSM-7":
+            if length <= 160:
+                return 1, length
+            else:
+                return math.ceil(length / 153), length
+        else:  # UCS-2
+            if length <= 70:
+                return 1, length
+            else:
+                return math.ceil(length / 67), length
 
     @sync_to_async
     def check_ip_whitelist(self, ip_address, client_obj=None):
@@ -249,7 +278,10 @@ class Command(BaseCommand):
         short_message = body[offset : offset + sm_length].decode(
             "utf-8", errors="ignore"
         )
-
+        encoding_type = self.detect_encoding(short_message)
+        total_segments, total_chars = self.calculate_segments(
+            short_message, encoding_type
+        )
         logger.info(
             f"Received SMS from {source_addr} to {destination_addr}: {short_message}"
         )
@@ -260,12 +292,29 @@ class Command(BaseCommand):
         vendor = getattr(writer, "vendor_obj", None)
         smpp = getattr(writer, "smpp_obj", None)
         await self.save_sms(
-            destination_addr, short_message, source_addr, smpp, client, vendor
+            destination_addr,
+            short_message,
+            encoding_type,
+            total_segments,
+            total_chars,
+            source_addr,
+            smpp,
+            client,
+            vendor,
         )
 
     @sync_to_async
     def save_sms(
-        self, destination, text, system_id, smpp=None, client=None, vendor=None
+        self,
+        destination,
+        text,
+        encodingType,
+        total_segments,
+        total_chars,
+        system_id,
+        smpp=None,
+        client=None,
+        vendor=None,
     ):
         """
         Django ORM is synchronous, so we wrap it in sync_to_async
@@ -274,6 +323,9 @@ class Command(BaseCommand):
         SMSMessage.objects.create(
             destination=destination,
             text=text,
+            encoding=encodingType,
+            segmentNumber=total_segments,
+            characterCount=total_chars,
             status="queued",  # It reached our server
             systemId=system_id,
             smpp=smpp,

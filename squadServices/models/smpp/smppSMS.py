@@ -41,6 +41,10 @@ class SMSMessage(models.Model):
     systemId = models.CharField(
         max_length=255, blank=True, null=True
     )  # Vendor system ID
+
+    encoding = models.CharField(max_length=255, blank=True, null=True)
+    segmentNumber = models.CharField(max_length=255, blank=True, null=True)
+    characterCount = models.CharField(max_length=255, blank=True, null=True)
     isDeleted = models.BooleanField(default=False)
     createdBy = models.ForeignKey(
         settings.AUTH_USER_MODEL,
