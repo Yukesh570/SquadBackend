@@ -18,7 +18,9 @@ class SMSMessage(models.Model):
     destination = models.CharField(max_length=20)
     text = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
-    message_id = models.CharField(max_length=255, blank=True, null=True)  # ID from SMSC
+    message_id = models.CharField(
+        max_length=255, blank=True, null=True, db_index=True
+    )  # ID from SMSC
     client = models.ForeignKey(
         Client,
         null=True,

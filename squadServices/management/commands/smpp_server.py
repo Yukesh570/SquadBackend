@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand
 from asgiref.sync import sync_to_async
 from squadServices.models.clientModel.client import Client, IpWhitelist
 from squadServices.models.connectivityModel.smpp import SMPP
-
+import secrets
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.routeManager.customRoute import CustomRoute
 from squadServices.models.smpp.smppSMS import SMSMessage
@@ -41,6 +41,45 @@ logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = "Runs a lightweight SMPP Server to receive SMS"
+
+    @sync_to_async
+    def update_sms_status(self, msg_id, status):
+        # 1. Standardize the incoming status string
+        # Clean the status: uppercase and remove extra spaces
+        clean_status = status.strip().upper()
+
+        # 2. Map carrier status to YOUR internal model choices
+        # (queued, sent, failed, delivered)
+        status_map = {
+            "DELIVRD": "delivered",
+            "UNDELIV": "failed",
+            "EXPIRED": "failed",
+            "REJECTD": "failed",
+            "DELETED": "failed",
+            "ACCEPTD": "sent",
+            "UNKNOWN": "sent",
+        }
+
+        # Default to "sent" if the carrier returns something we don't recognize
+        mapped_status = status_map.get(clean_status, "sent")
+
+        # 3. Update the database using the unique message_id
+        # We use .update() because it is efficient and doesn't trigger extra signals
+        updated_rows = SMSMessage.objects.filter(message_id=msg_id).update(
+            status=mapped_status
+        )
+
+        if updated_rows > 0:
+            logger.info(f"DLR Update Success: Message {msg_id} is now {mapped_status}")
+        else:
+            logger.warning(
+                f"DLR Update Orphaned: Received DLR for ID {msg_id}, but not found in DB."
+            )
+
+    def generate_message_id(self):
+        # Returns a unique 8-character hex string, e.g., 'a1b2c3d4'
+        # Or use str(uuid.uuid4())[:8]
+        return secrets.token_hex(4).upper()
 
     def detect_encoding(self, text):
         """Detect if text is GSM-7 compatible or requires UCS-2"""
@@ -105,7 +144,6 @@ class Command(BaseCommand):
                 .select_related("terminatingVendor")
                 .first()
             )
-            print("smpp vendor:::::::", route.terminatingVendor.smpp)
 
             if route and route.terminatingVendor.smpp.id:
                 return client, route.terminatingVendor, route.terminatingVendor.smpp
@@ -209,12 +247,15 @@ class Command(BaseCommand):
                         )
                         return
                     # -----------------
-
+                    # 1. Handle the message and get the ID back
+                    # Note: We need to modify handle_submit_sm to RETURN the ID
+                    msg_id_to_return = await self.handle_submit_sm(
+                        body_data, seq_num, writer
+                    )
                     # Handle the SMS only if they are logged in
-                    await self.handle_submit_sm(body_data, seq_num, writer)
-                    msg_id = f"ID{seq_num}".encode("ascii") + b"\0"
+                    resp_body = msg_id_to_return.encode("ascii") + b"\0"
                     await self.send_pdu(
-                        writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, msg_id
+                        writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
                     )
 
                 elif cmd_id == CMD_ENQUIRE_LINK:
@@ -222,6 +263,26 @@ class Command(BaseCommand):
                     await self.send_pdu(
                         writer, CMD_ENQUIRE_LINK_RESP, ESME_ROK, seq_num, b""
                     )
+                elif cmd_id == 0x00000005:  # CMD_DELIVER_SM (This is a DLR)
+                    # 1. Parse the DLR text from body_data
+                    # (Standard DLR text looks like: "id:A1B2C3D4 stat:DELIVRD ...")
+                    dlr_text = body_data.decode("utf-8", errors="ignore")
+
+                    # 2. Extract the ID and Status
+                    # Simple helper to find "id:XXXXX"
+                    import re
+
+                    match_id = re.search(r"id:([A-F0-9]+)", dlr_text)
+                    match_stat = re.search(r"stat:([A-Z]+)", dlr_text)
+
+                    if match_id and match_stat:
+                        target_id = match_id.group(1)
+                        new_status = match_stat.group(1)
+
+                        # 3. Update your database
+                        await self.update_sms_status(target_id, new_status)
+
+                    # 4. Respond to the carrier that you received the DLR
 
                 else:
                     # Unknown command, send Generic NACK
@@ -282,6 +343,7 @@ class Command(BaseCommand):
         total_segments, total_chars = self.calculate_segments(
             short_message, encoding_type
         )
+        unique_msg_id = self.generate_message_id()
         logger.info(
             f"Received SMS from {source_addr} to {destination_addr}: {short_message}"
         )
@@ -301,7 +363,9 @@ class Command(BaseCommand):
             smpp,
             client,
             vendor,
+            unique_msg_id,
         )
+        return unique_msg_id
 
     @sync_to_async
     def save_sms(
@@ -315,11 +379,11 @@ class Command(BaseCommand):
         smpp=None,
         client=None,
         vendor=None,
+        unique_msg_id=None,
     ):
         """
         Django ORM is synchronous, so we wrap it in sync_to_async
         """
-        print("smpp!!!!!!!!=====!!!!!!!", smpp)
         SMSMessage.objects.create(
             destination=destination,
             text=text,
@@ -331,7 +395,7 @@ class Command(BaseCommand):
             smpp=smpp,
             client=client,
             vendor=vendor,
-            message_id=f"Internal",
+            message_id=unique_msg_id,
         )
 
     async def send_pdu(self, writer, cmd_id, status, seq, body):

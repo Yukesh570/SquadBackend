@@ -25,6 +25,7 @@ class smppSMSSerializer(serializers.ModelSerializer):
             "clientName",
             "vendorName",
             "smppName",
+            "message_id",
             "systemId",
             "createdAt",
         ]
