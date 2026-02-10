@@ -65,6 +65,7 @@ class SMSMessage(models.Model):
         return f"{self.destination} - {self.status}"
 
     class Meta:
+        ordering = ["-updatedAt"]
         # Force Django to look for the lowercase table in Postgres
         # while keeping the app label as 'squadServices'
         db_table = "squadServices_smsmessage"
