@@ -9,6 +9,8 @@ from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 from squadServices.serializer.connectivitySerializer.SMPPSerializer import (
     SMPPSerializer,
 )
@@ -67,6 +69,19 @@ class SMPPViewSet(viewsets.ModelViewSet):
         if exist.exists():
             raise ValidationError({"error": "SMPP with this systemID already exists."})
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="SMPP",
+            description=f"A new SMPP named '{serializer.validated_data.get('smppHost')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="SMPP",
+            action=f"SMPP '{serializer.validated_data.get('smppHost')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -80,6 +95,19 @@ class SMPPViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="SMPP",
+            description=f"A SMPP named '{serializer.validated_data.get('smppHost')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="SMPP",
+            action=f"SMPP '{serializer.validated_data.get('smppHost')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -88,3 +116,16 @@ class SMPPViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="SMPP",
+            description=f"A SMPP named '{instance.smppHost}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="SMPP",
+            action=f"SMPP '{instance.smppHost}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )

@@ -11,6 +11,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
 from squadServices.models.clientModel.client import Client, IpWhitelist
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 from squadServices.serializer.clientSerializer.clientSerializer import (
     ClientSerializer,
     IpWhitelistSerializer,
@@ -62,6 +64,7 @@ class ClientViewSet(viewsets.ModelViewSet):
         check_permission(self, "write", module)
         name = serializer.validated_data.get("name")
         smppUsername = serializer.validated_data.get("smppUsername")
+
         exist = Client.objects.filter(
             Q(name__iexact=name) | Q(smppUsername__iexact=smppUsername), isDeleted=False
         )
@@ -70,6 +73,19 @@ class ClientViewSet(viewsets.ModelViewSet):
                 {"error": "Client with this name or smppUsername already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="Client",
+            description=f"A new Client named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Client",
+            action=f"Client '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -83,6 +99,19 @@ class ClientViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Client",
+            description=f"A Client named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Client",
+            action=f"Client '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -91,6 +120,19 @@ class ClientViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Client",
+            description=f"A Client named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Client",
+            action=f"Client '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
 
 class IpWhitelistFilter(django_filters.FilterSet):

@@ -3,6 +3,7 @@ from squad.utils.authenticators import JWTAuthentication
 from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.country import Country
+from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.routeManager.customRoute import CustomRoute
 from rest_framework import viewsets
 
@@ -10,6 +11,7 @@ from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
+from squadServices.models.users import UserLog
 from squadServices.serializer.routeManagerSerializer.customRouteSerializer import (
     CustomRouteSerializer,
 )
@@ -87,6 +89,20 @@ class CustomRouteViewSet(viewsets.ModelViewSet):
             )
         serializer.save(createdBy=user, updatedBy=user)
 
+        Notification.objects.create(
+            title="CustomRoute",
+            description=f"A new CustomRoute named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" CustomRoute ",
+            action=f"CustomRoute '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
         user = self.request.user
@@ -100,6 +116,19 @@ class CustomRouteViewSet(viewsets.ModelViewSet):
                     {"error": "CustomRoute with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="CustomRoute",
+            description=f"A CustomRoute named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" CustomRoute ",
+            action=f"CustomRoute '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -108,3 +137,16 @@ class CustomRouteViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="CustomRoute",
+            description=f"A CustomRoute named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" CustomRoute ",
+            action=f"CustomRoute '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )

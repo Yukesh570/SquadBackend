@@ -9,7 +9,8 @@ from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.email import EmailTemplate
 from squadServices.models.navItem import NavItem, NavUserRelation
-from squadServices.models.users import UserType
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog, UserType
 from squadServices.serializer.navSerializer import (
     GetSerializer,
     NavItemSerializer,
@@ -78,7 +79,6 @@ class NavItemViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         module = self.kwargs.get("module")
-        print("asdfasdfasdf", module)
         user = self.request.user
         check_permission(self, "write", module)
         label = serializer.validated_data.get("label")
@@ -110,6 +110,20 @@ class NavItemViewSet(viewsets.ModelViewSet):
             ]
 
             NavUserRelation.objects.bulk_create(relations)
+
+        Notification.objects.create(
+            title="Module",
+            description=f"A new Module named '{serializer.validated_data.get('label')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Module ",
+            action=f"Module '{serializer.validated_data.get('label')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -144,6 +158,19 @@ class NavItemViewSet(viewsets.ModelViewSet):
 
         user = self.request.user
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Module",
+            description=f"A Module named '{serializer.validated_data.get('label')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Module ",
+            action=f"Module '{serializer.validated_data.get('label')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -159,6 +186,19 @@ class NavItemViewSet(viewsets.ModelViewSet):
         for idx, item in enumerate(siblings, start=1):
             item.order = idx
             item.save()
+        Notification.objects.create(
+            title="Module",
+            description=f"A Module named '{instance.label}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Module ",
+            action=f"Module '{instance.label}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
 
 class GetNavUserRelationViewSet(viewsets.ModelViewSet):

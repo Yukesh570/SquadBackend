@@ -13,6 +13,8 @@ import openpyxl
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.campaign import Campaign, CampaignContact, Template
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 from squadServices.serializer.campaignSerializer import (
     CampaignContactSerializer,
     CampaignSerializer,
@@ -65,6 +67,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
+        user = self.request.user
+
         check_permission(self, "put", module)
         name = serializer.validated_data.get("name")
         if name != serializer.instance.name:
@@ -75,6 +79,19 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 )
 
         serializer.save(updatedBy=self.request.user)
+        Notification.objects.create(
+            title="Campaign",
+            description=f"A Campaign named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Campaign",
+            action=f"Campaign '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -83,6 +100,19 @@ class CampaignViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Campaign",
+            description=f"A Campaign named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Campaign",
+            action=f"Campaign '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def create(self, request, *args, **kwargs):
         data = request.data.copy()
@@ -219,7 +249,19 @@ class CampaignViewSet(viewsets.ModelViewSet):
             if createdContacts:
                 CampaignContact.objects.bulk_create(createdContacts)
         createdContactNumbers = [c.contactNumber for c in createdContacts]
-
+        Notification.objects.create(
+            title="Campaign",
+            description=f"A new Campaign named '{name}' has been created.",
+            createdBy=self.request.user,
+            updatedBy=self.request.user,
+        )
+        UserLog.objects.create(
+            user=self.request.user,
+            title=" Campaign",
+            action=f"Campaign '{name}' created.",
+            createdBy=self.request.user,
+            updatedBy=self.request.user,
+        )
         return Response(
             {
                 "campaign": serializer.data,
@@ -267,6 +309,19 @@ class TemplateViewSet(viewsets.ModelViewSet):
                 {"error": "Template with the same name already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title=" Template",
+            description=f"A new template named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Template",
+            action=f"Template '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -280,6 +335,19 @@ class TemplateViewSet(viewsets.ModelViewSet):
                     {"error": "Template with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title=" Template",
+            description=f"A  template named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Template",
+            action=f"Template '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -288,3 +356,16 @@ class TemplateViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title=" Template",
+            description=f"A  template named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Template",
+            action=f"Template '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )

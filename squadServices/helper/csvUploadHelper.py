@@ -11,6 +11,8 @@ import redis
 import csv
 
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 
 redis_client = redis.StrictRedis.from_url(os.getenv("CELERY_RESULT_BACKEND"))
 
@@ -58,6 +60,20 @@ def country_csv(request):
     import_country_task.apply_async(
         args=[filepath, request.user.id, task_id], task_id=task_id
     )
+    Notification.objects.create(
+        title="Country",
+        description="Country CSV import has started.",
+        createdBy=request.user,
+        updatedBy=request.user,
+    )
+
+    UserLog.objects.create(
+        user=request.user,
+        title="Country",
+        action="Country CSV import started.",
+        createdBy=request.user,
+        updatedBy=request.user,
+    )
 
     return Response({"message": "Import started", "task_id": task_id})
 
@@ -98,6 +114,20 @@ def operators_csv(request):
     # Trigger Celery task
     import_operator_task.apply_async(
         args=[filepath, request.user.id, task_id], task_id=task_id
+    )
+    Notification.objects.create(
+        title="Operator",
+        description="Operator CSV import has started.",
+        createdBy=request.user,
+        updatedBy=request.user,
+    )
+
+    UserLog.objects.create(
+        user=request.user,
+        title="Operator",
+        action="Operator CSV import started.",
+        createdBy=request.user,
+        updatedBy=request.user,
     )
 
     return Response({"message": "Import started", "task_id": task_id})
@@ -171,6 +201,20 @@ def upload_vendor_rate_csv(request):
     # Trigger Celery task
     import_vendor_rate_task.apply_async(
         args=[filepath, request.user.id, task_id, mapping.id], task_id=task_id
+    )
+    Notification.objects.create(
+        title="Vendor Rate",
+        description="Vendor rate CSV import has started.",
+        createdBy=request.user,
+        updatedBy=request.user,
+    )
+
+    UserLog.objects.create(
+        user=request.user,
+        title="Vendor Rate",
+        action="Vendor rate CSV import started.",
+        createdBy=request.user,
+        updatedBy=request.user,
     )
 
     return Response({"message": "Import started", "task_id": task_id})

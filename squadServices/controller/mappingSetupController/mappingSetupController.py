@@ -9,6 +9,8 @@ import django_filters
 
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 from squadServices.serializer.mappingSetupSerailzer.mappingSetupSerailzer import (
     MappingSetupSerializer,
 )
@@ -69,6 +71,19 @@ class MappingSetupViewSet(viewsets.ModelViewSet):
                 {"error": "MappingSetup with this ratePlan already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="MappingSetup",
+            description=f"A new MappingSetup named '{serializer.validated_data.get('ratePlan')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" MappingSetup",
+            action=f"MappingSetup '{serializer.validated_data.get('ratePlan')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -82,6 +97,19 @@ class MappingSetupViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="MappingSetup",
+            description=f"A MappingSetup named '{serializer.validated_data.get('ratePlan')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" MappingSetup",
+            action=f"MappingSetup '{serializer.validated_data.get('ratePlan')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -90,3 +118,16 @@ class MappingSetupViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="MappingSetup",
+            description=f"A MappingSetup named '{instance.ratePlan}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" MappingSetup",
+            action=f"MappingSetup '{instance.ratePlan}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )

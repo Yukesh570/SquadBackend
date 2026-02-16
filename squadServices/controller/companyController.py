@@ -9,6 +9,8 @@ from squadServices.helper.csvDownloadHelper import start_csv_export
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 from squadServices.serializer.companySerializer import (
     CompanyCategorySerializer,
     CompanySerializer,
@@ -60,6 +62,19 @@ class CompanyCategoryViewSet(viewsets.ModelViewSet):
                 {"error": "CompanyCategory with this name already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="Company Category",
+            description=f"A new Company Category named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Company Category",
+            action=f"Company Category '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -73,6 +88,19 @@ class CompanyCategoryViewSet(viewsets.ModelViewSet):
                     {"error": "CompanyCategory with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Company Category",
+            description=f"A Company Category named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Company Category",
+            action=f"Company Category '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -81,6 +109,19 @@ class CompanyCategoryViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Company Category",
+            description=f"A Company Category named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Company Category",
+            action=f"Company Category '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
 
 class CompanyStatusFilter(django_filters.FilterSet):
@@ -118,6 +159,19 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
                 {"error": "CompanyStatus with this name already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="Company Status",
+            description=f"A new Company Status named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Company Status",
+            action=f"Company Status '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -131,6 +185,19 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
                     {"error": "CompanyStatus with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Company Status",
+            description=f"A Company Status named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Company Status",
+            action=f"Company Status '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -139,6 +206,19 @@ class CompanyStatusViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Company Status",
+            description=f"A Company Status named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Company Status",
+            action=f"Company Status '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
 
 class ExtendedFilterSet(django_filters.FilterSet):
@@ -279,6 +359,19 @@ class CompanyViewSet(viewsets.ModelViewSet):
         if exist.exists():
             raise ValidationError({"error": "Company with this name already exists."})
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="Company",
+            description=f"A new Company named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Company ",
+            action=f"Company '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -292,6 +385,19 @@ class CompanyViewSet(viewsets.ModelViewSet):
                     {"error": "Company with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Company",
+            description=f"A Company named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Company ",
+            action=f"Company '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -300,13 +406,41 @@ class CompanyViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Company",
+            description=f"A Company named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Company ",
+            action=f"Company '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     @action(detail=False, methods=["get"], url_path="downloadCsv")
     def csv(self, request, module=None):
         module = self.kwargs.get("module")
+        user = self.request.user
+
         check_permission(self, "read", module)
         filtered_qs = self.filter_queryset(self.get_queryset())
         filter_dict = getattr(getattr(filtered_qs.query, "where", None), "children", [])
+        Notification.objects.create(
+            title="Company",
+            description=f"A Company CSV export has been initiated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title="Company",
+            action=f"Company CSV export initiated.",
+            createdBy=user,
+            updatedBy=user,
+        )
         return start_csv_export(
             self,
             request,

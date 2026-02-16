@@ -5,7 +5,9 @@ from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
+from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
+from squadServices.models.users import UserLog
 from squadServices.serializer.roleManagementSerializer.customerRateSerializer import (
     CustomerRateSerializer,
 )
@@ -29,6 +31,7 @@ class CustomerRateFilter(ExtendedFilterSet):
 
 
 class CustomerRateViewSet(viewsets.ModelViewSet):
+    queryset = CustomerRate.objects.all()
     serializer_class = CustomerRateSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -51,6 +54,19 @@ class CustomerRateViewSet(viewsets.ModelViewSet):
                 {"error": "CustomerRate with this ratePlan already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="CustomerRate",
+            description=f"A new CustomerRate named '{serializer.validated_data.get('ratePlan')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" CustomerRate ",
+            action=f"CustomerRate '{serializer.validated_data.get('ratePlan')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -64,6 +80,19 @@ class CustomerRateViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="CustomerRate",
+            description=f"A CustomerRate named '{serializer.validated_data.get('ratePlan')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" CustomerRate ",
+            action=f"CustomerRate '{serializer.validated_data.get('ratePlan')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -72,3 +101,16 @@ class CustomerRateViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="CustomerRate",
+            description=f"A CustomerRate named '{instance.ratePlan}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" CustomerRate ",
+            action=f"CustomerRate '{instance.ratePlan}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )

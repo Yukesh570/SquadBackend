@@ -6,8 +6,10 @@ from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
+from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.operators.operators import Operators
 
+from squadServices.models.users import UserLog
 from squadServices.serializer.operatorSerailizer.operatorSerializer import (
     OperatorSerializer,
 )
@@ -53,6 +55,19 @@ class OperatorViewSet(viewsets.ModelViewSet):
         if exist.exists():
             raise ValidationError({"error": "Operators with this name already exists."})
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="Operator",
+            description=f"A new Operator named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Operator",
+            action=f"Operator '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -66,6 +81,19 @@ class OperatorViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Operator",
+            description=f"A Operator named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Operator",
+            action=f"Operator '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -74,3 +102,16 @@ class OperatorViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Operator",
+            description=f"A Operator named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Operator",
+            action=f"Operator '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )

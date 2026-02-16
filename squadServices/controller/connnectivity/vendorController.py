@@ -7,6 +7,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
 from squadServices.models.connectivityModel.verdor import Vendor
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 from squadServices.serializer.connectivitySerializer.vendorSerializer import (
     VendorSerializer,
 )
@@ -57,6 +59,19 @@ class VendorViewSet(viewsets.ModelViewSet):
                 {"error": "Vendor with this profileName already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="Vendor",
+            description=f"A new Vendor named '{serializer.validated_data.get('profileName')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Vendor",
+            action=f"Vendor '{serializer.validated_data.get('profileName')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -70,6 +85,19 @@ class VendorViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Vendor",
+            description=f"A Vendor named '{serializer.validated_data.get('profileName')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Vendor",
+            action=f"Vendor '{serializer.validated_data.get('profileName')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -78,3 +106,16 @@ class VendorViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Vendor",
+            description=f"A Vendor named '{instance.profileName}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Vendor",
+            action=f"Vendor '{instance.profileName}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )

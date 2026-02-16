@@ -9,6 +9,8 @@ from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.network import Network
+from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.users import UserLog
 from squadServices.serializer.countrySerializer import (
     CountrySerializer,
     CurrencySerializer,
@@ -68,6 +70,19 @@ class NetworkViewSet(viewsets.ModelViewSet):
                 {"error": "Network for the selected country already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
+        Notification.objects.create(
+            title="Network",
+            description=f"A new Network named '{serializer.validated_data.get('name')}' has been created.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Network ",
+            action=f"Network '{serializer.validated_data.get('name')}' created.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -81,6 +96,19 @@ class NetworkViewSet(viewsets.ModelViewSet):
                     {"error": "Network with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
+        Notification.objects.create(
+            title="Network",
+            description=f"A Network named '{serializer.validated_data.get('name')}' has been updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Network ",
+            action=f"Network '{serializer.validated_data.get('name')}' updated.",
+            createdBy=user,
+            updatedBy=user,
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -89,3 +117,16 @@ class NetworkViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
+        Notification.objects.create(
+            title="Network",
+            description=f"A Network named '{instance.name}' has been deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
+        UserLog.objects.create(
+            user=user,
+            title=" Network ",
+            action=f"Network '{instance.name}' deleted.",
+            createdBy=user,
+            updatedBy=user,
+        )
