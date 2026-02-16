@@ -1,5 +1,10 @@
 from rest_framework import viewsets, permissions
 
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_update,
+)
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
@@ -59,19 +64,7 @@ class VendorViewSet(viewsets.ModelViewSet):
                 {"error": "Vendor with this profileName already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="Vendor",
-            description=f"A new Vendor named '{serializer.validated_data.get('profileName')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Vendor",
-            action=f"Vendor '{serializer.validated_data.get('profileName')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "Vendor", serializer.validated_data.get("profileName"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -85,19 +78,7 @@ class VendorViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="Vendor",
-            description=f"A Vendor named '{serializer.validated_data.get('profileName')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Vendor",
-            action=f"Vendor '{serializer.validated_data.get('profileName')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "Vendor", serializer.validated_data.get("profileName"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -106,16 +87,4 @@ class VendorViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="Vendor",
-            description=f"A Vendor named '{instance.profileName}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Vendor",
-            action=f"Vendor '{instance.profileName}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "Vendor", instance.profileName)

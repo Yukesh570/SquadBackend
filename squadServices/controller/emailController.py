@@ -1,5 +1,10 @@
 from rest_framework import viewsets, permissions
 
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_update,
+)
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.email import EmailHost, EmailTemplate
@@ -54,19 +59,7 @@ class EmailHostViewSet(viewsets.ModelViewSet):
         if exist.exists():
             raise ValidationError({"error": "EmailHost with this name already exists."})
         serializer.save(owner=user, createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="EmailHost",
-            description=f"A new EmailHost named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" EmailHost ",
-            action=f"EmailHost '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "EmailHost", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         name = serializer.validated_data.get("name")
@@ -81,19 +74,7 @@ class EmailHostViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="EmailHost",
-            description=f"A EmailHost named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" EmailHost ",
-            action=f"EmailHost '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "EmailHost", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -102,19 +83,7 @@ class EmailHostViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="EmailHost",
-            description=f"A EmailHost named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" EmailHost ",
-            action=f"EmailHost '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "EmailHost", instance.name)
 
 
 class EmailTemplateFilter(django_filters.FilterSet):
@@ -154,19 +123,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
                 {"error": "EmailTemplate with this name already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="EmailTemplate",
-            description=f"A new EmailTemplate named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" EmailTemplate ",
-            action=f"EmailTemplate '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "EmailTemplate", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -180,19 +137,7 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="EmailTemplate",
-            description=f"A EmailTemplate named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" EmailTemplate ",
-            action=f"EmailTemplate '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "EmailTemplate", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -201,16 +146,4 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="EmailTemplate",
-            description=f"A EmailTemplate named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" EmailTemplate ",
-            action=f"EmailTemplate '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "EmailTemplate", instance.name)

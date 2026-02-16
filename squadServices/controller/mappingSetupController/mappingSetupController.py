@@ -1,6 +1,11 @@
 from rest_framework import viewsets, permissions
 
 from squadServices.controller.companyController import ExtendedFilterSet
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_update,
+)
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
@@ -71,18 +76,8 @@ class MappingSetupViewSet(viewsets.ModelViewSet):
                 {"error": "MappingSetup with this ratePlan already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="MappingSetup",
-            description=f"A new MappingSetup named '{serializer.validated_data.get('ratePlan')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" MappingSetup",
-            action=f"MappingSetup '{serializer.validated_data.get('ratePlan')}' created.",
-            createdBy=user,
-            updatedBy=user,
+        log_action_create(
+            user, "MappingSetup", serializer.validated_data.get("ratePlan")
         )
 
     def perform_update(self, serializer):
@@ -97,18 +92,8 @@ class MappingSetupViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="MappingSetup",
-            description=f"A MappingSetup named '{serializer.validated_data.get('ratePlan')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" MappingSetup",
-            action=f"MappingSetup '{serializer.validated_data.get('ratePlan')}' updated.",
-            createdBy=user,
-            updatedBy=user,
+        log_action_update(
+            user, "MappingSetup", serializer.validated_data.get("ratePlan")
         )
 
     def perform_destroy(self, instance):
@@ -118,16 +103,5 @@ class MappingSetupViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="MappingSetup",
-            description=f"A MappingSetup named '{instance.ratePlan}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" MappingSetup",
-            action=f"MappingSetup '{instance.ratePlan}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+
+        log_action_delete(user, "MappingSetup", instance.ratePlan)

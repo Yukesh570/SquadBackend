@@ -1,6 +1,11 @@
 from rest_framework import viewsets, permissions
 
 from squadServices.controller.companyController import ExtendedFilterSet
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_update,
+)
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 
@@ -73,19 +78,7 @@ class ClientViewSet(viewsets.ModelViewSet):
                 {"error": "Client with this name or smppUsername already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="Client",
-            description=f"A new Client named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title="Client",
-            action=f"Client '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "Client", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -99,19 +92,7 @@ class ClientViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="Client",
-            description=f"A Client named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title="Client",
-            action=f"Client '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "Client", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -120,19 +101,7 @@ class ClientViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="Client",
-            description=f"A Client named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title="Client",
-            action=f"Client '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "Client", instance.name)
 
 
 class IpWhitelistFilter(django_filters.FilterSet):

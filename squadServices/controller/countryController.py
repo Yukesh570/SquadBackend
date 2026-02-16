@@ -4,6 +4,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_export,
+    log_action_update,
+)
 from squadServices.helper.csvDownloadHelper import start_csv_export
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
@@ -63,19 +69,7 @@ class CountryViewSet(viewsets.ModelViewSet):
         if exist.exists():
             raise ValidationError({"error": "Country with this name already exists."})
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="Country",
-            description=f"A new Country named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Country ",
-            action=f"Country '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "Country", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -90,19 +84,7 @@ class CountryViewSet(viewsets.ModelViewSet):
                     {"error": "Country with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="Country",
-            description=f"A Country named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Country ",
-            action=f"Country '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "Country", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -111,19 +93,7 @@ class CountryViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="Country",
-            description=f"A Country named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Country ",
-            action=f"Country '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "Country", instance.name)
 
     @action(detail=False, methods=["get"], url_path="downloadCsv")
     def csv(self, request, module=None):
@@ -134,19 +104,8 @@ class CountryViewSet(viewsets.ModelViewSet):
         filtered_qs = self.filter_queryset(self.get_queryset())
         filter_dict = getattr(getattr(filtered_qs.query, "where", None), "children", [])
         print("filter_dict", filter_dict)
-        Notification.objects.create(
-            title="Country",
-            description=f"A Country CSV export has been initiated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title="Country",
-            action=f"Country CSV export initiated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_export(user, "Country")
+
         return start_csv_export(
             self,
             request,
@@ -196,19 +155,7 @@ class StateViewSet(viewsets.ModelViewSet):
                 {"error": "State for the selected country already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="State",
-            description=f"A new State named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" State ",
-            action=f"State '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "State", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -222,19 +169,7 @@ class StateViewSet(viewsets.ModelViewSet):
                     {"error": "State with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="State",
-            description=f"A State named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" State ",
-            action=f"State '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "State", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -243,19 +178,7 @@ class StateViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="State",
-            description=f"A State named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" State ",
-            action=f"State '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "State", instance.name)
 
 
 class CurrencyFilter(django_filters.FilterSet):
@@ -296,19 +219,7 @@ class CurrencyViewSet(viewsets.ModelViewSet):
                 {"error": "Currency for the selected country already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="Currency",
-            description=f"A new Currency named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Currency ",
-            action=f"Currency '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "Currency", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -322,19 +233,7 @@ class CurrencyViewSet(viewsets.ModelViewSet):
                     {"error": "Currency with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="Currency",
-            description=f"A Currency named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Currency ",
-            action=f"Currency '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "Currency", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -343,19 +242,7 @@ class CurrencyViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="Currency",
-            description=f"A Currency named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Currency ",
-            action=f"Currency '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "Currency", instance.name)
 
 
 class EntityFilter(django_filters.FilterSet):
@@ -393,19 +280,7 @@ class EntityViewSet(viewsets.ModelViewSet):
                 {"error": "Entity for the selected country already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="Entity",
-            description=f"A new Entity named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Entity ",
-            action=f"Entity '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "Entity", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -419,19 +294,7 @@ class EntityViewSet(viewsets.ModelViewSet):
                     {"error": "Entity with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="Entity",
-            description=f"A Entity named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Entity ",
-            action=f"Entity '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "Entity", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -440,19 +303,7 @@ class EntityViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="Entity",
-            description=f"A Entity named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" Entity ",
-            action=f"Entity '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "Entity", instance.name)
 
 
 class TimeZoneFilter(django_filters.FilterSet):
@@ -491,19 +342,7 @@ class TimeZoneViewSet(viewsets.ModelViewSet):
                 {"error": "TimeZone for the selected country already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="TimeZone",
-            description=f"A new TimeZone named '{serializer.validated_data.get('name')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" TimeZone ",
-            action=f"TimeZone '{serializer.validated_data.get('name')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "TimeZone", serializer.validated_data.get("name"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -517,19 +356,7 @@ class TimeZoneViewSet(viewsets.ModelViewSet):
                     {"error": "TimeZone with the same name already exists."}
                 )
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="TimeZone",
-            description=f"A TimeZone named '{serializer.validated_data.get('name')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" TimeZone ",
-            action=f"TimeZone '{serializer.validated_data.get('name')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "TimeZone", serializer.validated_data.get("name"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -538,16 +365,4 @@ class TimeZoneViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="TimeZone",
-            description=f"A TimeZone named '{instance.name}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" TimeZone ",
-            action=f"TimeZone '{instance.name}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "TimeZone", instance.name)

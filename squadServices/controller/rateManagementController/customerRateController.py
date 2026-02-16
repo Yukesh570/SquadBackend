@@ -1,5 +1,10 @@
 from rest_framework import viewsets, permissions
 from squadServices.controller.companyController import ExtendedFilterSet
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_update,
+)
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
@@ -54,18 +59,8 @@ class CustomerRateViewSet(viewsets.ModelViewSet):
                 {"error": "CustomerRate with this ratePlan already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="CustomerRate",
-            description=f"A new CustomerRate named '{serializer.validated_data.get('ratePlan')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" CustomerRate ",
-            action=f"CustomerRate '{serializer.validated_data.get('ratePlan')}' created.",
-            createdBy=user,
-            updatedBy=user,
+        log_action_create(
+            user, "CustomerRate", serializer.validated_data.get("ratePlan")
         )
 
     def perform_update(self, serializer):
@@ -80,18 +75,8 @@ class CustomerRateViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="CustomerRate",
-            description=f"A CustomerRate named '{serializer.validated_data.get('ratePlan')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" CustomerRate ",
-            action=f"CustomerRate '{serializer.validated_data.get('ratePlan')}' updated.",
-            createdBy=user,
-            updatedBy=user,
+        log_action_update(
+            user, "CustomerRate", serializer.validated_data.get("ratePlan")
         )
 
     def perform_destroy(self, instance):
@@ -101,16 +86,4 @@ class CustomerRateViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="CustomerRate",
-            description=f"A CustomerRate named '{instance.ratePlan}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" CustomerRate ",
-            action=f"CustomerRate '{instance.ratePlan}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "CustomerRate", instance.ratePlan)

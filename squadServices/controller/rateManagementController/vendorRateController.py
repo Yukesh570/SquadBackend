@@ -1,5 +1,10 @@
 from rest_framework import viewsets, permissions
 
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_update,
+)
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
@@ -69,19 +74,7 @@ class VendorRateViewSet(viewsets.ModelViewSet):
                 {"error": "VendorRate with this ratePlan already exists."}
             )
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="VendorRate",
-            description=f"A new VendorRate named '{serializer.validated_data.get('ratePlan')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" VendorRate ",
-            action=f"VendorRate '{serializer.validated_data.get('ratePlan')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "VendorRate", serializer.validated_data.get("ratePlan"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -95,19 +88,7 @@ class VendorRateViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="VendorRate",
-            description=f"A VendorRate named '{serializer.validated_data.get('ratePlan')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" VendorRate ",
-            action=f"VendorRate '{serializer.validated_data.get('ratePlan')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "VendorRate", serializer.validated_data.get("ratePlan"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -116,16 +97,4 @@ class VendorRateViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="VendorRate",
-            description=f"A VendorRate named '{instance.ratePlan}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title=" VendorRate ",
-            action=f"VendorRate '{instance.ratePlan}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "VendorRate", instance.ratePlan)

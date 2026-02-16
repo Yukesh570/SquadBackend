@@ -1,6 +1,11 @@
 from rest_framework import viewsets, permissions
 
 from squadServices.controller.companyController import ExtendedFilterSet
+from squadServices.helper.action import (
+    log_action_create,
+    log_action_delete,
+    log_action_update,
+)
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.connectivityModel.smpp import SMPP
@@ -69,19 +74,7 @@ class SMPPViewSet(viewsets.ModelViewSet):
         if exist.exists():
             raise ValidationError({"error": "SMPP with this systemID already exists."})
         serializer.save(createdBy=user, updatedBy=user)
-        Notification.objects.create(
-            title="SMPP",
-            description=f"A new SMPP named '{serializer.validated_data.get('smppHost')}' has been created.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title="SMPP",
-            action=f"SMPP '{serializer.validated_data.get('smppHost')}' created.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_create(user, "SMPP", serializer.validated_data.get("smppHost"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
@@ -95,19 +88,7 @@ class SMPPViewSet(viewsets.ModelViewSet):
                 )
         user = self.request.user
         serializer.save(updatedBy=user)
-        Notification.objects.create(
-            title="SMPP",
-            description=f"A SMPP named '{serializer.validated_data.get('smppHost')}' has been updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title="SMPP",
-            action=f"SMPP '{serializer.validated_data.get('smppHost')}' updated.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_update(user, "SMPP", serializer.validated_data.get("smppHost"))
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
@@ -116,16 +97,4 @@ class SMPPViewSet(viewsets.ModelViewSet):
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        Notification.objects.create(
-            title="SMPP",
-            description=f"A SMPP named '{instance.smppHost}' has been deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
-        UserLog.objects.create(
-            user=user,
-            title="SMPP",
-            action=f"SMPP '{instance.smppHost}' deleted.",
-            createdBy=user,
-            updatedBy=user,
-        )
+        log_action_delete(user, "SMPP", instance.smppHost)
