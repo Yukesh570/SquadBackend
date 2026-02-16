@@ -1,5 +1,6 @@
 from rest_framework import viewsets, permissions
 
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
@@ -13,36 +14,36 @@ from squadServices.serializer.mappingSetupSerailzer.mappingSetupSerailzer import
 )
 
 
-class MappingSetupFilter(django_filters.FilterSet):
-    ratePlan = django_filters.CharFilter(lookup_expr="icontains")
-    country = django_filters.CharFilter(lookup_expr="icontains")
-    countryCode = django_filters.CharFilter(lookup_expr="icontains")
-    timeZone = django_filters.CharFilter(lookup_expr="icontains")
+class MappingSetupFilter(ExtendedFilterSet):
+    # ratePlan = django_filters.CharFilter(lookup_expr="icontains")
+    # country = django_filters.CharFilter(lookup_expr="icontains")
+    # countryCode = django_filters.CharFilter(lookup_expr="icontains")
+    # timeZone = django_filters.CharFilter(lookup_expr="icontains")
 
-    network = django_filters.CharFilter(lookup_expr="icontains")
+    # network = django_filters.CharFilter(lookup_expr="icontains")
 
-    MCC = django_filters.CharFilter(lookup_expr="icontains")
-    MNC = django_filters.CharFilter(lookup_expr="icontains")
-    rate = django_filters.NumberFilter()
+    # MCC = django_filters.CharFilter(lookup_expr="icontains")
+    # MNC = django_filters.CharFilter(lookup_expr="icontains")
+    # rate = django_filters.NumberFilter()
 
-    dateTime = django_filters.CharFilter(lookup_expr="icontains")
+    # dateTime = django_filters.CharFilter(lookup_expr="icontains")
 
-    createdAt = django_filters.DateFromToRangeFilter()
+    # createdAt = django_filters.DateFromToRangeFilter()
 
     class Meta:
         model = MappingSetup
-        fields = [
-            "ratePlan",
-            "country",
-            "countryCode",
-            "timeZone",
-            "network",
-            "MCC",
-            "MNC",
-            "rate",
-            "dateTime",
-            "createdAt",
-        ]
+        fields = {
+            "ratePlan": ["exact", "icontains"],
+            "country": ["exact", "icontains"],
+            "countryCode": ["exact", "icontains"],
+            "timeZone": ["exact", "icontains"],
+            "network": ["exact", "icontains"],
+            "MCC": ["exact", "icontains"],
+            "MNC": ["exact", "icontains"],
+            "rate": ["exact", "icontains"],
+            "dateTime": ["exact", "icontains"],
+            "createdAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
 
 
 class MappingSetupViewSet(viewsets.ModelViewSet):

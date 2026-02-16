@@ -1,5 +1,6 @@
 from rest_framework.permissions import IsAuthenticated
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.country import Country
 from squadServices.models.routeManager.customRoute import CustomRoute
@@ -14,48 +15,48 @@ from squadServices.serializer.routeManagerSerializer.customRouteSerializer impor
 )
 
 
-class CustomRouteFilter(django_filters.FilterSet):
-    name = django_filters.CharFilter(lookup_expr="icontains")
-    orginatingCompany = django_filters.CharFilter(
-        field_name="orginatingCompany__name", lookup_expr="icontains"
-    )
+class CustomRouteFilter(ExtendedFilterSet):
+    # name = django_filters.CharFilter(lookup_expr="icontains")
+    # orginatingCompany = django_filters.CharFilter(
+    #     field_name="orginatingCompany__name", lookup_expr="icontains"
+    # )
 
-    orginatingClient = django_filters.CharFilter(
-        field_name="orginatingClient__name", lookup_expr="icontains"
-    )
+    # orginatingClient = django_filters.CharFilter(
+    #     field_name="orginatingClient__name", lookup_expr="icontains"
+    # )
 
-    country = django_filters.CharFilter(
-        field_name="country__name", lookup_expr="icontains"
-    )
+    # country = django_filters.CharFilter(
+    #     field_name="country__name", lookup_expr="icontains"
+    # )
 
-    operator = django_filters.CharFilter(
-        field_name="operator__name", lookup_expr="icontains"
-    )
+    # operator = django_filters.CharFilter(
+    #     field_name="operator__name", lookup_expr="icontains"
+    # )
 
-    terminatingCompany = django_filters.CharFilter(
-        field_name="terminatingCompany__name", lookup_expr="icontains"
-    )
-    terminatingVendor = django_filters.CharFilter(
-        field_name="terminatingVendor__name", lookup_expr="icontains"
-    )
-    status = django_filters.CharFilter(lookup_expr="iexact")
-    priority = django_filters.CharFilter(lookup_expr="icontains")
-    createdAt = django_filters.DateFromToRangeFilter()
+    # terminatingCompany = django_filters.CharFilter(
+    #     field_name="terminatingCompany__name", lookup_expr="icontains"
+    # )
+    # terminatingVendor = django_filters.CharFilter(
+    #     field_name="terminatingVendor__name", lookup_expr="icontains"
+    # )
+    # status = django_filters.CharFilter(lookup_expr="iexact")
+    # priority = django_filters.CharFilter(lookup_expr="icontains")
+    # createdAt = django_filters.DateFromToRangeFilter()
 
     class Meta:
         model = CustomRoute
-        fields = [
-            "name",
-            "orginatingCompany",
-            "orginatingClient",
-            "country",
-            "operator",
-            "terminatingCompany",
-            "terminatingVendor",
-            "status",
-            "priority",
-            "createdAt",
-        ]
+        fields = {
+            "name": ["exact", "icontains"],
+            "orginatingCompany__name": ["exact", "icontains"],
+            "orginatingClient__name": ["exact", "icontains"],
+            "country__name": ["exact", "icontains"],
+            "operator__name": ["exact", "icontains"],
+            "terminatingCompany__name": ["exact", "icontains"],
+            "terminatingVendor__profileName": ["exact", "icontains"],
+            "status": ["exact"],
+            "priority": ["exact", "icontains"],
+            "createdAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
 
 
 class CustomRouteViewSet(viewsets.ModelViewSet):

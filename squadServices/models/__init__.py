@@ -8,3 +8,4 @@ from .network import Network
 from .mappingSetup.mappingSetup import MappingSetup
 from .operators.operators import Operators
 from .smpp.smppSMS import SMSMessage
+from .notificationModel.notification import Notification

@@ -43,3 +43,35 @@ class UserLoginHistory(models.Model):
 
     def __str__(self):
         return f"{self.user.username} | {self.ipAddress} | {self.loggedAt}"
+
+
+class UserLog(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.DO_NOTHING,
+        related_name="UserLog",
+    )
+    title = models.CharField(max_length=100)
+    action = models.TextField()
+    isDeleted = models.BooleanField(default=False)
+
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedAt = models.DateTimeField(auto_now=True)
+    createdBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="userLog_created",
+    )
+    updatedBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="userLog_updated",
+    )
+
+    class Meta:
+        ordering = ["-updatedAt"]
+
+    def __str__(self):
+        return f"{self.user.username} | {self.title} | {self.createdBy}"

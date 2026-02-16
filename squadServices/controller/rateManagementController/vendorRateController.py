@@ -15,34 +15,33 @@ from squadServices.serializer.roleManagementSerializer.vendorRateSerializer impo
 
 
 class VendorRateFilter(django_filters.FilterSet):
-    countryName = django_filters.CharFilter(
-        field_name="country__name", lookup_expr="icontains"
-    )
-    ratePlan = django_filters.CharFilter(lookup_expr="icontains")
-    network = django_filters.CharFilter(lookup_expr="icontains")
+    # countryName = django_filters.CharFilter(
+    #     field_name="country__name", lookup_expr="icontains"
+    # )
+    # ratePlan = django_filters.CharFilter(lookup_expr="icontains")
+    # network = django_filters.CharFilter(lookup_expr="icontains")
 
-    currencyCode = django_filters.CharFilter(lookup_expr="icontains")
-    timeZone = django_filters.CharFilter(lookup_expr="icontains")
-    MCC = django_filters.CharFilter(lookup_expr="icontains")
-    MNC = django_filters.CharFilter(lookup_expr="icontains")
-    countryCode = django_filters.CharFilter(lookup_expr="icontains")
-    rate = django_filters.NumberFilter()
-    createdAt = django_filters.DateFromToRangeFilter()
+    # currencyCode = django_filters.CharFilter(lookup_expr="icontains")
+    # timeZone = django_filters.CharFilter(lookup_expr="icontains")
+    # MCC = django_filters.CharFilter(lookup_expr="icontains")
+    # MNC = django_filters.CharFilter(lookup_expr="icontains")
+    # countryCode = django_filters.CharFilter(lookup_expr="icontains")
+    # rate = django_filters.NumberFilter()
+    # createdAt = django_filters.DateFromToRangeFilter()
 
     class Meta:
         model = VendorRate
-        fields = [
-            "countryName",
-            "ratePlan",
-            "currencyCode",
-            "timeZone",
-            "MCC",
-            "rate",
-            "MNC",
-            "countryCode",
-            "network",
-            "createdAt",
-        ]
+        fields = {
+            "ratePlan": ["exact", "icontains", "isnull"],
+            "country": ["exact", "icontains", "isnull"],
+            "currencyCode": ["exact", "icontains", "isnull"],
+            "timeZone": ["exact", "icontains", "isnull"],
+            "MCC": ["exact", "icontains", "isnull"],
+            "rate": ["exact", "gt", "lt", "range", "isnull"],
+            "MNC": ["exact", "icontains", "isnull"],
+            "countryCode": ["exact", "icontains", "isnull"],
+            "createdAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
 
 
 class VendorRateViewSet(viewsets.ModelViewSet):

@@ -1,5 +1,6 @@
 from rest_framework import viewsets, permissions
 
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.connectivityModel.smpp import SMPP
@@ -13,32 +14,31 @@ from squadServices.serializer.connectivitySerializer.SMPPSerializer import (
 )
 
 
-class SMPPFilter(django_filters.FilterSet):
-    smppHost = django_filters.CharFilter(lookup_expr="icontains")
-    smppPort = django_filters.NumberFilter()
-    systemID = django_filters.CharFilter(lookup_expr="icontains")
-    smtpUser = django_filters.CharFilter(lookup_expr="icontains")
-    bindMode = django_filters.CharFilter(lookup_expr="icontains")
-    sourceTON = django_filters.NumberFilter()
-    destTON = django_filters.NumberFilter()
-    sourceNPI = django_filters.NumberFilter()
-    destNPI = django_filters.NumberFilter()
-    createdAt = django_filters.DateFromToRangeFilter()
+class SMPPFilter(ExtendedFilterSet):
+    # smppHost = django_filters.CharFilter(lookup_expr="icontains")
+    # smppPort = django_filters.NumberFilter()
+    # systemID = django_filters.CharFilter(lookup_expr="icontains")
+    # smtpUser = django_filters.CharFilter(lookup_expr="icontains")
+    # bindMode = django_filters.CharFilter(lookup_expr="icontains")
+    # sourceTON = django_filters.NumberFilter()
+    # destTON = django_filters.NumberFilter()
+    # sourceNPI = django_filters.NumberFilter()
+    # destNPI = django_filters.NumberFilter()
+    # createdAt = django_filters.DateFromToRangeFilter()
 
     class Meta:
         model = SMPP
-        fields = [
-            "smppHost",
-            "smppPort",
-            "systemID",
-            "smtpUser",
-            "bindMode",
-            "sourceTON",
-            "destTON",
-            "sourceNPI",
-            "destNPI",
-            "createdAt",
-        ]
+        fields = {
+            "smppHost": ["exact", "icontains", "isnull"],
+            "smppPort": ["exact", "icontains", "isnull"],
+            "systemID": ["exact", "icontains", "isnull"],
+            "bindMode": ["exact", "icontains", "isnull"],
+            "sourceTON": ["exact", "gt", "lt", "range", "isnull"],
+            "destTON": ["exact", "gt", "lt", "range", "isnull"],
+            "sourceNPI": ["exact", "gt", "lt", "range", "isnull"],
+            "destNPI": ["exact", "gt", "lt", "range", "isnull"],
+            "createdAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
 
 
 class SMPPViewSet(viewsets.ModelViewSet):

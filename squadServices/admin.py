@@ -12,12 +12,13 @@ from squadServices.models.email import EmailHost, EmailTemplate
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.network import Network
+from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.routeManager.customRoute import CustomRoute
 from squadServices.models.smpp.smppSMS import SMSMessage
-from squadServices.models.users import User, UserLoginHistory
+from squadServices.models.users import User, UserLog, UserLoginHistory
 
 
 class CustomUserAdmin(UserAdmin):
@@ -80,6 +81,18 @@ class TemplateAdmin(admin.ModelAdmin):
 class EmailTemplateAdmin(admin.ModelAdmin):
     model = EmailTemplate
     list_display = ("id", "name")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class NotificationAdmin(admin.ModelAdmin):
+    model = Notification
+    list_display = ("id", "title", "description")
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class UserLogAdmin(admin.ModelAdmin):
+    model = UserLog
+    list_display = ("id", "title", "action")
     readonly_fields = ("createdAt", "updatedAt")
 
 
@@ -471,3 +484,5 @@ admin.site.register(MappingSetup, MappingSetupAdmin)
 admin.site.register(Operators, OperatorsAdmin)
 admin.site.register(UserLoginHistory, UserLoginHistoryAdmin)
 admin.site.register(SMSMessage, SMSMessageAdmin)
+admin.site.register(Notification, NotificationAdmin)
+admin.site.register(UserLog, UserLogAdmin)

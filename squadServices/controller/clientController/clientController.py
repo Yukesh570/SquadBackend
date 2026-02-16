@@ -1,5 +1,6 @@
 from rest_framework import viewsets, permissions
 
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 
@@ -16,30 +17,31 @@ from squadServices.serializer.clientSerializer.clientSerializer import (
 )
 
 
-class ClientFilter(django_filters.FilterSet):
-    smtpUser = django_filters.CharFilter(lookup_expr="icontains")
-    name = django_filters.CharFilter(lookup_expr="icontains")
-    status = django_filters.CharFilter(lookup_expr="icontains")
-    route = django_filters.CharFilter(lookup_expr="icontains")
-    paymentTerms = django_filters.CharFilter(lookup_expr="icontains")
-    creditLimit = django_filters.CharFilter(lookup_expr="icontains")
-    balanceAlertAmount = django_filters.CharFilter(lookup_expr="icontains")
-    allowNetting = django_filters.CharFilter(lookup_expr="icontains")
-    createdAt = django_filters.DateFromToRangeFilter()
+class ClientFilter(ExtendedFilterSet):
+
+    # smtpUser = django_filters.CharFilter(lookup_expr="icontains")
+    # name = django_filters.CharFilter(lookup_expr="icontains")
+    # status = django_filters.CharFilter(lookup_expr="icontains")
+    # route = django_filters.CharFilter(lookup_expr="icontains")
+    # paymentTerms = django_filters.CharFilter(lookup_expr="icontains")
+    # creditLimit = django_filters.CharFilter(lookup_expr="icontains")
+    # balanceAlertAmount = django_filters.CharFilter(lookup_expr="icontains")
+    # allowNetting = django_filters.CharFilter(lookup_expr="icontains")
+    # createdAt = django_filters.DateFromToRangeFilter()
 
     class Meta:
         model = Client
-        fields = [
-            "name",
-            "status",
-            "route",
-            "paymentTerms",
-            "smtpUser",
-            "creditLimit",
-            "balanceAlertAmount",
-            "allowNetting",
-            "createdAt",
-        ]
+        fields = {
+            "name": ["exact", "icontains", "isnull"],
+            "status": ["exact", "icontains", "isnull"],
+            "route": ["exact", "icontains", "isnull"],
+            "smppUsername": ["exact", "icontains", "isnull"],
+            "paymentTerms": ["exact", "icontains", "isnull"],
+            "creditLimit": ["exact", "gt", "lt", "range", "isnull"],
+            "balanceAlertAmount": ["exact", "gt", "lt", "range", "isnull"],
+            "allowNetting": ["exact"],
+            "createdAt": ["exact", "range", "gt", "lt"],
+        }
 
 
 class ClientViewSet(viewsets.ModelViewSet):

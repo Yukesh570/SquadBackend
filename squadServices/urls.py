@@ -41,6 +41,9 @@ from squadServices.controller.mappingSetupController.mappingSetupController impo
     MappingSetupViewSet,
 )
 from squadServices.controller.networkController import NetworkViewSet
+from squadServices.controller.notificationController.notificationController import (
+    NotificationViewSet,
+)
 from squadServices.controller.operatorController.operatorController import (
     OperatorViewSet,
 )
@@ -59,6 +62,7 @@ from squadServices.controller.user import (
     UserInformationView,
     UserProfileView,
 )
+from squadServices.controller.userLogController import UserLogViewSet
 from squadServices.controller.views import (
     GetNavUserRelationViewSet,
     NavItemViewSet,
@@ -275,6 +279,48 @@ urlpatterns = [
             }
         ),
         name="vendor",
+    ),
+    path(
+        "notification/",
+        NotificationViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="userActionLog",
+    ),
+    path(
+        "notification/<int:pk>/",
+        NotificationViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="userActionLog",
+    ),
+    path(
+        "userActionLog/",
+        UserLogViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="userActionLog",
+    ),
+    path(
+        "userActionLog/<int:pk>/",
+        UserLogViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="userActionLog",
     ),
     path(
         "client/<str:module>/",

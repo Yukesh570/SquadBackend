@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
@@ -10,34 +11,21 @@ from squadServices.serializer.roleManagementSerializer.customerRateSerializer im
 )
 
 
-class CustomerRateFilter(django_filters.FilterSet):
-    countryName = django_filters.CharFilter(
-        field_name="country__name", lookup_expr="icontains"
-    )
-    ratePlan = django_filters.CharFilter(lookup_expr="icontains")
-    currencyCode = django_filters.CharFilter(lookup_expr="icontains")
-    countryCode = django_filters.CharFilter(lookup_expr="icontains")
-
-    timeZone = django_filters.CharFilter(lookup_expr="icontains")
-    MCC = django_filters.CharFilter(lookup_expr="icontains")
-    MNC = django_filters.CharFilter(lookup_expr="icontains")
-
-    rate = django_filters.NumberFilter()
-    createdAt = django_filters.DateFromToRangeFilter()
+class CustomerRateFilter(ExtendedFilterSet):
 
     class Meta:
         model = CustomerRate
-        fields = [
-            "countryName",
-            "ratePlan",
-            "currencyCode",
-            "countryCode",
-            "timeZone",
-            "MCC",
-            "MNC",
-            "rate",
-            "createdAt",
-        ]
+        fields = {
+            "country__name": ["exact", "icontains"],
+            "ratePlan": ["exact", "icontains"],
+            "currencyCode": ["exact", "icontains"],
+            "countryCode": ["exact", "icontains"],
+            "timeZone__name": ["exact", "icontains"],
+            "MCC": ["exact", "icontains"],
+            "MNC": ["exact", "icontains"],
+            "rate": ["exact", "gt", "lt", "range", "isnull"],
+            "createdAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
 
 
 class CustomerRateViewSet(viewsets.ModelViewSet):
