@@ -90,7 +90,7 @@ class Company(models.Model):
         TimeZone, on_delete=models.CASCADE, related_name="companyTimeZones"
     )
     businessEntity = models.ForeignKey(
-        Entity, on_delete=models.CASCADE, related_name="entities"
+        Entity, on_delete=models.CASCADE, related_name="entities", null=True, blank=True
     )
 
     customerCreditLimit = models.DecimalField(
