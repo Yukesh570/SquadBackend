@@ -24,6 +24,7 @@ from squadServices.serializer.roleManagementSerializer.vendorRateSerializer impo
 )
 from dateutil import parser
 import logging
+import re  # Make sure this is at the top of your file!
 
 User = get_user_model()
 from django.conf import settings
@@ -138,20 +139,39 @@ def export_model_csv(model_name: str, filters=None, fields=None, module=None):
     processed = 0
 
     # Write CSV
+    # Write CSV
     with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(fields)
+
         for obj in queryset.iterator(chunk_size=2000):
             processed += 1
 
-            row = [
-                getattr(obj, f, getattr(getattr(obj, f, ""), "name", ""))
-                for f in fields
-            ]
-            writer.writerow(row)
-            progress = int((processed / total) * 100)
-            redis_client.set(task_id, progress)
+            row = []
+            for field_name in fields:
+                val = getattr(obj, field_name, None)
 
+                # Safely extract the 'name' if it's a Foreign Key
+                if val is not None and hasattr(val, "name"):
+                    val = val.name
+                elif val is None:
+                    val = ""
+                else:
+                    val = str(val)
+
+                # THE EXCEL HACK:
+                # If the string is only digits and commas (like "734,901"),
+                # wrap it in an Excel formula so Excel doesn't delete the comma.
+                if re.fullmatch(r"[\d,]+", val) and "," in val:
+                    val = f'="{val}"'
+
+                row.append(val)
+
+            writer.writerow(row)
+
+            # Update Redis
+            progress = int((processed / total) * 100)
+            redis_client.set(task_id, str(progress))
     # Schedule deletion after 5 minutes
     deleteForLater.apply_async(args=[filepath], countdown=300)
     redis_client.set(task_id, "100")
@@ -305,22 +325,22 @@ def import_country_task(self, filepath, user_id, task_id):
                     continue
 
                 # Check if country already exists (by name or countryCode)
-                if Country.objects.filter(
-                    Q(name=name) | Q(countryCode=code), isDeleted=False
-                ).exists():
+                if Country.objects.filter(Q(name=name), isDeleted=False).exists():
                     errors.append(
                         {
                             "row": index,
-                            "error": f"Country '{name}' or code '{code}' already exists",
+                            "error": f"Country '{name}'  already exists",
                         }
                     )
                     continue
-
+                raw_mcc = str(row.get("MCC") or "0").strip()
+                # 2. Remove commas and spaces
+                # clean_mcc = raw_mcc.replace(",", "").strip()
                 try:
                     Country.objects.create(
                         name=name,
                         countryCode=code,
-                        MCC=int(row.get("MCC") or 0),
+                        MCC=raw_mcc,
                         createdBy=user,
                         updatedBy=user,
                         isDeleted=False,
