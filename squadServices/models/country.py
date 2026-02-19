@@ -5,7 +5,7 @@ from django.db import models
 class Country(models.Model):
     name = models.CharField(max_length=100)  # User-friendly name
     countryCode = models.CharField(max_length=100)
-    MCC = models.IntegerField()
+    MCC = models.CharField(max_length=100)
     isDeleted = models.BooleanField(default=False)
     createdBy = models.ForeignKey(
         settings.AUTH_USER_MODEL,
