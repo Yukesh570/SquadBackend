@@ -6,12 +6,14 @@ import struct
 import logging
 from django.core.management.base import BaseCommand
 from asgiref.sync import sync_to_async
+from squadServices.helper.checkNumber import clean_phone_number
 from squadServices.models.clientModel.client import Client, IpWhitelist
 from squadServices.models.connectivityModel.smpp import SMPP
 import secrets
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.routeManager.customRoute import CustomRoute
 from squadServices.models.smpp.smppSMS import SMSMessage
+import re
 
 # Configuration
 # HOST = "192.168.10.3"
@@ -241,23 +243,32 @@ class Command(BaseCommand):
                     # --- THE GUARD ---
                     if not getattr(writer, "is_authenticated", False):
                         logger.warning("Unauthenticated SUBMIT_SM attempt blocked.")
-                        # Send Error: ESME_RINVBNDSTS (Incorrect Bind Status) = 0x00000004
                         await self.send_pdu(
                             writer, CMD_SUBMIT_SM_RESP, 0x00000004, seq_num, b""
                         )
-                        return
+                        continue  # Changed from 'return' to 'continue' to keep connection open!
                     # -----------------
+
                     # 1. Handle the message and get the ID back
-                    # Note: We need to modify handle_submit_sm to RETURN the ID
                     msg_id_to_return = await self.handle_submit_sm(
                         body_data, seq_num, writer
                     )
-                    # Handle the SMS only if they are logged in
+
+                    # --- THE MISSING REJECTION LOGIC ---
+                    if not msg_id_to_return:
+                        logger.warning("Rejecting PDU: Invalid Destination Address")
+                        # 0x0000000B is the official SMPP error for "Invalid Destination"
+                        await self.send_pdu(
+                            writer, CMD_SUBMIT_SM_RESP, 0x0000000B, seq_num, b""
+                        )
+                        continue
+                    # -----------------------------------
+
+                    # Handle the SMS only if valid
                     resp_body = msg_id_to_return.encode("ascii") + b"\0"
                     await self.send_pdu(
                         writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
                     )
-
                 elif cmd_id == CMD_ENQUIRE_LINK:
                     # Keep-alive
                     await self.send_pdu(
@@ -314,7 +325,15 @@ class Command(BaseCommand):
         offset += 1
         dest_addr_npi = body[offset]
         offset += 1
-        destination_addr, offset = self.read_c_string(body, offset)
+        raw_destination_addr, offset = self.read_c_string(body, offset)
+        validated_number = clean_phone_number(raw_destination_addr)
+        if not validated_number:
+            logger.warning(
+                f"Invalid destination number rejected: {raw_destination_addr}"
+            )
+            # You should probably reject the SMPP message here!
+            return None
+        destination_addr = validated_number.replace("+", "")
 
         esm_class = body[offset]
         offset += 1
