@@ -3,7 +3,7 @@ from django.db import models
 
 
 class Country(models.Model):
-    name = models.CharField(max_length=100)  # User-friendly name
+    name = models.CharField(max_length=100)
     countryCode = models.CharField(max_length=100)
     MCC = models.CharField(max_length=100)
     isDeleted = models.BooleanField(default=False)
