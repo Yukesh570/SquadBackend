@@ -42,7 +42,7 @@ class ClientFilter(ExtendedFilterSet):
             "name": ["exact", "icontains", "isnull"],
             "status": ["exact", "icontains", "isnull"],
             "route": ["exact", "icontains", "isnull"],
-            "country__name": ["exact", "icontains", "isnull"],
+            "company__name": ["exact", "icontains", "isnull"],
             "smppUsername": ["exact", "icontains", "isnull"],
             "paymentTerms": ["exact", "icontains", "isnull"],
             "creditLimit": ["exact", "gt", "lt", "range", "isnull"],
