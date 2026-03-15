@@ -64,10 +64,48 @@ class SMSMessage(models.Model):
     updatedAt = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.destination} - {self.status}"
+        return f"{self.destination}"
 
     class Meta:
         ordering = ["-updatedAt"]
         # Force Django to look for the lowercase table in Postgres
         # while keeping the app label as 'squadServices'
         db_table = "squadServices_smsmessage"
+
+
+class SMSMessagePart(models.Model):
+    STATUS_CHOICES = (
+        ("QUEUED", "Queued"),
+        ("DELIVERED", "Delivered"),  # <--- Add this!
+        ("SUBMITTED", "Submitted"),
+        ("FAILED", "Failed"),
+    )
+
+    # Links back to the parent message
+    message = models.ForeignKey(
+        "SMSMessage", related_name="parts", on_delete=models.CASCADE
+    )
+
+    # Tracking the pieces
+    part_no = models.IntegerField()
+    part_total = models.IntegerField()
+    udh_ref = models.IntegerField()
+
+    # esm_class = 0x40 tells the vendor "The first 6 bytes are routing instructions!"
+    esm_class = models.IntegerField(default=0x00)
+
+    # The actual payload (UDH bytes + Text chunk bytes)
+    short_message = models.BinaryField()
+
+    # State tracking
+    submit_status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="QUEUED"
+    )
+    vendor_msg_id = models.CharField(max_length=100, null=True, blank=True)
+    vendor_submit_status = models.IntegerField(null=True, blank=True)
+
+    submit_attempts = models.IntegerField(default=0)
+    last_submit_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Msg {self.message.id} - Part {self.part_no}/{self.part_total}"

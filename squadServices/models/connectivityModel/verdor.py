@@ -4,6 +4,7 @@ from django.db import models
 from squadServices.models.company import Company
 from squadServices.models.connectivityModel.smpp import SMPP
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
+from squadServices.models.rateManagementModel.vendorRate import VendorRate
 
 CONNECTION_TYPE_CHOICES = [
     ("SMPP", "SMPP"),
@@ -13,10 +14,16 @@ CONNECTION_TYPE_CHOICES = [
 
 class Vendor(models.Model):
     company = models.ForeignKey(
-        Company, on_delete=models.CASCADE, related_name="company"
+        Company, on_delete=models.CASCADE, related_name="vendor"
     )
     smpp = models.ForeignKey(
         SMPP, on_delete=models.DO_NOTHING, related_name="smpp", null=True, blank=True
+    )
+    ratePlanName = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text="Type the exact name of the ratePlan used in the VendorRate table",
     )
     profileName = models.CharField(max_length=255)
     connectionType = models.CharField(

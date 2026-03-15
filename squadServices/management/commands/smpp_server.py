@@ -7,13 +7,26 @@ import logging
 from django.core.management.base import BaseCommand
 from asgiref.sync import sync_to_async
 from squadServices.helper.checkNumber import clean_phone_number
+from squadServices.helper.routeAndCostHelper import get_route_and_cost
+from squadServices.helper.smsSplitter import create_message_parts
 from squadServices.models.clientModel.client import Client, IpWhitelist
 from squadServices.models.connectivityModel.smpp import SMPP
 import secrets
 from squadServices.models.connectivityModel.verdor import Vendor
+from squadServices.models.country import Country
+from squadServices.models.operators.operators import Operators
 from squadServices.models.routeManager.customRoute import CustomRoute
 from squadServices.models.smpp.smppSMS import SMSMessage
 import re
+from django.db import transaction
+
+from squadServices.models.transaction.transaction import (
+    ClientTransaction,
+    TransactionType,
+    VendorTransaction,
+)
+
+# from squadServices.models.transaction import transaction
 
 # Configuration
 # HOST = "192.168.10.3"
@@ -121,40 +134,55 @@ class Command(BaseCommand):
             return IpWhitelist.objects.filter(ip=ip_address, client=client_obj).exists()
         return IpWhitelist.objects.filter(ip=ip_address).exists()
 
-    # Get all the smppuser from smpp database
     @sync_to_async
-    def authenticate_and_get_route(self, username, password):
+    def authenticate_client(self, username, password):
         """
-        Authenticates the client and finds their assigned vendor via CustomRoute.
+        Strictly handles authentication. We don't route yet because
+        we don't know the destination number until the SUBMIT_SM command!
         """
-
         try:
-            # 1. Authenticate the Client
             client = Client.objects.filter(
                 smppUsername=username, smppPassword=password
-            ).first()  # Get the actual object, not just True/False
-            print("smpp client:::::::", client)
-            if not client:
-                return None, None, None
-
-            # 2. Find the CustomRoute for this Client
-            # We look for an active route that isn't deleted
-            route = (
-                CustomRoute.objects.filter(
-                    orginatingClient=client, status="ACTIVE", isDeleted=False
-                )
-                .select_related("terminatingVendor")
-                .first()
-            )
-
-            if route and route.terminatingVendor.smpp.id:
-                return client, route.terminatingVendor, route.terminatingVendor.smpp
-
-            return client, None, None  # Client is valid, but no route/vendor found
-
+            ).first()
+            return client
         except Exception as e:
-            logger.error(f"Auth/Route Lookup Error: {e}")
-            return None, None, None
+            logger.error(f"Auth Lookup Error: {e}")
+            return None
+
+    # Get all the smppuser from smpp database
+    # @sync_to_async
+    # def authenticate_and_get_route(self, username, password):
+    #     """
+    #     Authenticates the client and finds their assigned vendor via CustomRoute.
+    #     """
+
+    #     try:
+    #         # 1. Authenticate the Client
+    #         client = Client.objects.filter(
+    #             smppUsername=username, smppPassword=password
+    #         ).first()  # Get the actual object, not just True/False
+    #         print("smpp client:::::::", client)
+    #         if not client:
+    #             return None, None, None
+
+    #         # 2. Find the CustomRoute for this Client
+    #         # We look for an active route that isn't deleted
+    #         route = (
+    #             CustomRoute.objects.filter(
+    #                 orginatingClient=client, status="ACTIVE", isDeleted=False
+    #             )
+    #             .select_related("terminatingVendor")
+    #             .first()
+    #         )
+
+    #         if route and route.terminatingVendor.smpp.id:
+    #             return client, route.terminatingVendor, route.terminatingVendor.smpp
+
+    #         return client, None, None  # Client is valid, but no route/vendor found
+
+    #     except Exception as e:
+    #         logger.error(f"Auth/Route Lookup Error: {e}")
+    #         return None, None, None
 
     def handle(self, *args, **kwargs):
         self.stdout.write(f"Starting SMPP Server on {HOST}:{PORT}...")
@@ -199,9 +227,7 @@ class Command(BaseCommand):
                     print(f"Auth attempt: {system_id} from {client_ip}")
 
                     # NOW we can authenticate because system_id and password exist
-                    client_obj, vendor_obj, smpp_obj = (
-                        await self.authenticate_and_get_route(system_id, password)
-                    )
+                    client_obj = await self.authenticate_client(system_id, password)
 
                     if client_obj:
                         # Check IP Whitelist for this specific client
@@ -223,8 +249,8 @@ class Command(BaseCommand):
                         # SUCCESS
                         writer.is_authenticated = True
                         writer.client_obj = client_obj
-                        writer.vendor_obj = vendor_obj
-                        writer.smpp_obj = smpp_obj
+                        # writer.vendor_obj = vendor_obj
+                        # writer.smpp_obj = smpp_obj
 
                         resp_body = system_id.encode("ascii") + b"\0"
                         await self.send_pdu(
@@ -257,10 +283,6 @@ class Command(BaseCommand):
                     # --- THE MISSING REJECTION LOGIC ---
                     if not msg_id_to_return:
                         logger.warning("Rejecting PDU: Invalid Destination Address")
-                        # 0x0000000B is the official SMPP error for "Invalid Destination"
-                        await self.send_pdu(
-                            writer, CMD_SUBMIT_SM_RESP, 0x0000000B, seq_num, b""
-                        )
                         continue
                     # -----------------------------------
 
@@ -307,6 +329,126 @@ class Command(BaseCommand):
             writer.close()
             await writer.wait_closed()
 
+    @sync_to_async
+    def get_route_and_potential_cost(
+        self, client_obj, destination_number, total_segments
+    ):
+
+        # --- 1. DYNAMIC COUNTRY LOOKUP ---
+        destination_country = None
+        for i in range(4, 0, -1):
+            possible_code = destination_number[:i]
+            destination_country = Country.objects.filter(
+                countryCode=possible_code, isDeleted=False
+            ).first()
+            if destination_country:
+                break
+
+        if not destination_country:
+            return None, f"Unrecognized Country Code in {destination_number}"
+        print(
+            "========================destination_country===========",
+            destination_country,
+        )
+        print(
+            "==================destination_number=================", destination_number
+        )
+
+        # --- 2. CALL THE ROUTING ENGINE (No Operator Needed!) ---
+        route_data, error = get_route_and_cost(client_obj, destination_country)
+
+        if error:
+            return None, error
+
+        # Multiply by segments to get true costs!
+        total_vendor_cost = route_data["vendor_cost"] * total_segments
+        total_client_cost = route_data["client_cost"] * total_segments
+
+        terminating_company = route_data["terminatingCompany"]
+        client_company = client_obj.company  # Get the Parent Company of the Client
+
+        # 1. Check Vendor Limit (Does this push our debt to the vendor over the limit?)
+        if (
+            terminating_company.usedVendorCredit + total_vendor_cost
+        ) > terminating_company.vendorCreditLimit:
+            return None, "Insufficient Vendor Credit Line for multi-part message."
+
+        # 2. Check Client Limit (Does this push the specific SMPP account over its limit?)
+        if (client_obj.usedCredit + total_client_cost) > client_obj.creditLimit:
+            return None, "Insufficient Client SMPP Credit Line for multi-part message."
+
+        # 3. Check Global Company Limit (Does this push the Parent Company over its total limit?)
+        if (
+            client_company.usedCustomerCredit + total_client_cost
+        ) > client_company.customerCreditLimit:
+            return (
+                None,
+                "Insufficient Global Company Credit Line for multi-part message.",
+            )
+
+        route_data["total_vendor_cost"] = total_vendor_cost
+        route_data["total_client_cost"] = total_client_cost
+
+        return route_data, None
+
+    @sync_to_async
+    def perform_actual_deduction(
+        self, client_obj, route_data, total_segments, sms_message_obj
+    ):
+        vendor_obj = route_data["vendor"]
+        terminatingCompany_obj = route_data["terminatingCompany"]
+        clientCompany_obj = client_obj.company
+        with transaction.atomic():
+            print("\n" + "=" * 50)
+            print("💳 CREDIT DEDUCTION TRIGGERED 💳")
+            print(
+                f"1. Vendor Company: {terminatingCompany_obj} -> usedVendorCredit increased by {route_data['total_vendor_cost']}"
+            )
+            print(
+                f"2. Client Account: {client_obj} -> usedCredit increased by {route_data['total_client_cost']}"
+            )
+            print(
+                f"3. Client Parent Company: {clientCompany_obj} -> usedCustomerCredit increased by {route_data['total_client_cost']}"
+            )
+            print("=" * 50 + "\n")
+            # ---------------------------------------
+            # 1. Add to Vendor's Used Credit
+            terminatingCompany_obj.usedVendorCredit += route_data["total_vendor_cost"]
+            terminatingCompany_obj.save()
+
+            # 2. Add to Client's Used Credit
+            client_obj.usedCredit += route_data["total_client_cost"]
+            client_obj.save()
+
+            # 3. Add to the Global Company's Used Credit
+            clientCompany_obj.usedCustomerCredit += route_data["total_client_cost"]
+            clientCompany_obj.save()
+            VendorTransaction.objects.create(
+                vendor=vendor_obj,
+                message=sms_message_obj,
+                transactionType=TransactionType.DEDUCTION,
+                segments=total_segments,
+                ratePerSegment=route_data["vendor_cost"],
+                amount=route_data["total_vendor_cost"],
+                balanceSpent=terminatingCompany_obj.usedVendorCredit,
+                description=f"Routing charge for SMS {sms_message_obj.message_id}",
+            )
+
+            # 2. Client Ledger (Uncomment when you add the balance field to Client)
+
+            ClientTransaction.objects.create(
+                client=client_obj,
+                message=sms_message_obj,
+                transactionType=TransactionType.DEDUCTION,
+                segments=total_segments,
+                ratePerSegment=route_data["client_cost"],
+                amount=route_data["total_client_cost"],
+                balanceSpent=client_obj.usedCredit,
+                description=f"Sent SMS {sms_message_obj.message_id}",
+            )
+
+        logger.info(f"Ledger updated for Msg {sms_message_obj.message_id}")
+
     async def handle_submit_sm(self, body, seq_num, writer):
         """
         Parses the SUBMIT_SM body and saves to Django DB.
@@ -334,6 +476,7 @@ class Command(BaseCommand):
             # You should probably reject the SMPP message here!
             return None
         destination_addr = validated_number.replace("+", "")
+        client_obj = getattr(writer, "client_obj", None)
 
         esm_class = body[offset]
         offset += 1
@@ -353,8 +496,6 @@ class Command(BaseCommand):
         offset += 1
         sm_length = body[offset]
         offset += 1
-
-        # Extract SMS Text
         short_message = body[offset : offset + sm_length].decode(
             "utf-8", errors="ignore"
         )
@@ -362,6 +503,18 @@ class Command(BaseCommand):
         total_segments, total_chars = self.calculate_segments(
             short_message, encoding_type
         )
+        route_data, routing_error = await self.get_route_and_potential_cost(
+            client_obj, destination_addr, total_segments
+        )
+        if routing_error:
+            logger.warning(
+                f"Routing/Billing Failed for {destination_addr}: {routing_error}"
+            )
+            return None  # This will trigger the 0x0000000B rejection in handle_client!
+        vendor = route_data["vendor"]
+        smpp = route_data["smpp"]
+        # Extract SMS Text
+
         unique_msg_id = self.generate_message_id()
         logger.info(
             f"Received SMS from {source_addr} to {destination_addr}: {short_message}"
@@ -370,21 +523,31 @@ class Command(BaseCommand):
 
         # Save to Database (Async Wrapper)
         client = getattr(writer, "client_obj", None)
-        vendor = getattr(writer, "vendor_obj", None)
-        smpp = getattr(writer, "smpp_obj", None)
-        await self.save_sms(
-            destination_addr,
-            short_message,
-            encoding_type,
-            total_segments,
-            total_chars,
-            source_addr,
-            smpp,
-            client,
-            vendor,
-            unique_msg_id,
-        )
-        return unique_msg_id
+        try:
+            saved_msg = await self.save_sms(
+                destination_addr,
+                short_message,
+                encoding_type,
+                total_segments,
+                total_chars,
+                source_addr,
+                smpp,
+                client_obj,  # client data
+                vendor,
+                unique_msg_id,
+            )
+            await self.perform_actual_deduction(
+                client_obj, route_data, total_segments, saved_msg
+            )
+            resp_body = unique_msg_id.encode("ascii") + b"\0"
+            await self.send_pdu(
+                writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
+            )
+            return unique_msg_id
+        except Exception as e:
+            logger.error(f"Failed to process SMS/Billing: {e}")
+            await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
+            return None
 
     @sync_to_async
     def save_sms(
@@ -403,7 +566,7 @@ class Command(BaseCommand):
         """
         Django ORM is synchronous, so we wrap it in sync_to_async
         """
-        SMSMessage.objects.create(
+        parent_msg = SMSMessage.objects.create(
             destination=destination,
             text=text,
             encoding=encodingType,
@@ -416,6 +579,8 @@ class Command(BaseCommand):
             vendor=vendor,
             message_id=unique_msg_id,
         )
+        create_message_parts(parent_msg, text)
+        return parent_msg
 
     async def send_pdu(self, writer, cmd_id, status, seq, body):
         """Constructs and writes the SMPP PDU"""

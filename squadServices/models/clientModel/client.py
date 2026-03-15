@@ -33,6 +33,12 @@ class Client(models.Model):
     company = models.ForeignKey(
         Company, on_delete=models.CASCADE, related_name="clientCompany"
     )
+    ratePlanName = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text="Type the exact name of the ratePlan used in the customerRate table",
+    )
     status = models.CharField(
         max_length=11,
         choices=STATUS_CHOICES,
@@ -51,6 +57,14 @@ class Client(models.Model):
     creditLimit = models.DecimalField(max_digits=18, decimal_places=4, default=0.00)
     balanceAlertAmount = models.DecimalField(
         max_digits=18, decimal_places=4, default=0.00
+    )
+
+    # for now......
+    usedCredit = models.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        default=0.00,
+        help_text="Tracks how much this specific SMPP account has spent",
     )
     allowNetting = models.BooleanField(default=False)
     smppUsername = models.CharField(max_length=255)

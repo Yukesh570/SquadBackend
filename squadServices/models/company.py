@@ -99,6 +99,22 @@ class Company(models.Model):
     vendorCreditLimit = models.DecimalField(
         max_digits=10, decimal_places=4, default=0.00
     )
+
+    # for now.....
+
+    usedCustomerCredit = models.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        default=0.00,
+        help_text="Tracks total amount this company owes you (Customer spend)",
+    )
+    usedVendorCredit = models.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        default=0.00,
+        help_text="Tracks total amount you owe this company (Vendor spend)",
+    )
+
     balanceAlertAmount = models.DecimalField(
         max_digits=10, decimal_places=4, default=0.00
     )

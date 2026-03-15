@@ -17,34 +17,34 @@ class CustomRoute(models.Model):
     name = models.CharField(max_length=100)
     orginatingCompany = models.ForeignKey(
         Company,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.CASCADE,
         related_name="orginatingCompanyCustomRoutes",
     )
     orginatingClient = models.ForeignKey(
         Client,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.CASCADE,
         related_name="orginatingClientCustomRoutes",
     )
     priority = models.TextField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="INACTIVE")
     country = models.ForeignKey(
         Country,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.CASCADE,
         related_name="countryCustomRoutes",
     )
 
     operator = models.ForeignKey(
-        Operators, on_delete=models.DO_NOTHING, related_name="operatorCustomRoutes"
+        Operators, on_delete=models.CASCADE, related_name="operatorCustomRoutes"
     )
 
     terminatingCompany = models.ForeignKey(
         Company,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.CASCADE,
         related_name="terminatingCompanyCustomRoutes",
     )
     terminatingVendor = models.ForeignKey(
         Vendor,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.CASCADE,
         related_name="terminatingVendorCustomRoutes",
     )
     isDeleted = models.BooleanField(default=False)

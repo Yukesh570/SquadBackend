@@ -8,7 +8,7 @@ class Operators(models.Model):
     name = models.TextField()
     country = models.ForeignKey(
         Country,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.CASCADE,
         related_name="countryOperators",
         null=True,
         blank=True,

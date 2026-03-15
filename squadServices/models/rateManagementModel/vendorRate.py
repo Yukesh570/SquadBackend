@@ -21,10 +21,10 @@ class VendorRate(models.Model):
     countryCode = models.IntegerField(null=True, blank=True)
     timeZone = models.CharField(max_length=255, null=True, blank=True)
     country = models.CharField(max_length=255, null=True, blank=True)
-    MCC = models.IntegerField(null=True, blank=True)
+    MCC = models.CharField(max_length=100)
     MNC = models.IntegerField(null=True, blank=True)
 
-    rate = models.FloatField(null=True, blank=True)
+    rate = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     remark = models.CharField(max_length=255, null=True, blank=True)
     dateTime = models.DateTimeField(null=True, blank=True)
 

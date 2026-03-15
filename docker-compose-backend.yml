@@ -4,7 +4,7 @@ services:
   backend:
     build: .
     container_name: squad-backend
-    command: gunicorn squad.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 120
+    command: gunicorn squad.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 4 --timeout 90 --worker-class gthread --worker-connections 1000
     env_file:
       - .env
     depends_on:
@@ -14,6 +14,7 @@ services:
       - "8000:8000" # Django API on host:8000
     volumes:
       - ./media:/app/media
+    restart: always
 
   celery:
     build: .

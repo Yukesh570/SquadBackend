@@ -12,6 +12,7 @@ class ClientSerializer(serializers.ModelSerializer):
             "id",
             "company",
             "companyName",
+            "ratePlanName",
             "name",
             "status",
             "route",

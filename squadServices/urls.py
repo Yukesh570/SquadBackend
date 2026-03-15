@@ -54,6 +54,10 @@ from squadServices.controller.routeManagerController.customRouteController impor
     CustomRouteViewSet,
 )
 from squadServices.controller.smppSMSController.smppSMSController import SmppSMSViewSet
+from squadServices.controller.transaction.transactionController import (
+    ClientTransactionViewSet,
+    VendorTransactionViewSet,
+)
 from squadServices.controller.user import (
     ChangePasswordView,
     EditUserView,
@@ -669,6 +673,24 @@ urlpatterns = [
                 "delete": "destroy",
             }
         ),
+    ),
+    path(
+        "clientTransaction/<str:module>/",
+        ClientTransactionViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+        name="clientTransaction",
+    ),
+    path(
+        "vendorTransaction/<str:module>/",
+        VendorTransactionViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+        name="vendorTransaction",
     ),
     path("vendor-rate/import/", upload_vendor_rate_csv),
     path("country/import", country_csv),

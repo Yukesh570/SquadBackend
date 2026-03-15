@@ -17,7 +17,11 @@ from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.routeManager.customRoute import CustomRoute
-from squadServices.models.smpp.smppSMS import SMSMessage
+from squadServices.models.smpp.smppSMS import SMSMessage, SMSMessagePart
+from squadServices.models.transaction.transaction import (
+    ClientTransaction,
+    VendorTransaction,
+)
 from squadServices.models.users import User, UserLog, UserLoginHistory
 
 
@@ -293,9 +297,10 @@ class vendorAdmin(admin.ModelAdmin):
     model = Vendor
     list_display = (
         "id",
+        "profileName",
         "company",
         "smpp",
-        "profileName",
+        "ratePlanName",
         "connectionType",
         "isDeleted",
         "createdAt",
@@ -311,6 +316,7 @@ class clientAdmin(admin.ModelAdmin):
         "id",
         "name",
         "company",
+        "ratePlanName",
         "smppUsername",
         "status",
         "route",
@@ -440,6 +446,20 @@ class SMSMessageAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
+class SMSMessagePartAdmin(admin.ModelAdmin):
+    model = SMSMessagePart
+    list_display = (
+        "id",
+        "message",
+        "part_no",
+        "part_total",
+        "udh_ref",
+        "esm_class",
+        "last_submit_at",
+    )
+    search_fields = ("message__text",)
+
+
 class IpWhiteListAdmin(admin.ModelAdmin):
     model = IpWhitelist
     list_display = (
@@ -453,9 +473,48 @@ class IpWhiteListAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
+class ClientTransactionAdmin(admin.ModelAdmin):
+    model = ClientTransaction
+    list_display = (
+        "id",
+        "client",
+        "message",
+        "transactionType",
+        "segments",
+        "ratePerSegment",
+        "amount",
+        "balanceSpent",
+        "description",
+        "createdAt",
+        "updatedAt",
+        "isDeleted",
+    )
+    search_fields = ("ip",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+
+class VendorTransactionAdmin(admin.ModelAdmin):
+    model = VendorTransaction
+    list_display = (
+        "id",
+        "vendor",
+        "message",
+        "transactionType",
+        "segments",
+        "ratePerSegment",
+        "amount",
+        "balanceSpent",
+        "description",
+        "createdAt",
+        "updatedAt",
+        "isDeleted",
+    )
+    search_fields = ("ip",)
+    readonly_fields = ("createdAt", "updatedAt")
+
+
 admin.site.register(CustomRoute, CustomRouteAdmin)
 admin.site.register(IpWhitelist, IpWhiteListAdmin)
-
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(NavItem, NavItemAdmin)
 admin.site.register(NavUserRelation, NavUserRelationAdmin)
@@ -463,9 +522,7 @@ admin.site.register(Campaign, CampaignAdmin)
 admin.site.register(CampaignContact, CampaignContactAdmin)
 admin.site.register(Template, TemplateAdmin)
 admin.site.register(EmailTemplate, EmailTemplateAdmin)
-
 admin.site.register(EmailHost, EmailHostAdmin)
-
 admin.site.register(CompanyCategory, companyCategoryAdmin)
 admin.site.register(CompanyStatus, companyStatusAdmin)
 admin.site.register(Country, countryAdmin)
@@ -484,5 +541,8 @@ admin.site.register(MappingSetup, MappingSetupAdmin)
 admin.site.register(Operators, OperatorsAdmin)
 admin.site.register(UserLoginHistory, UserLoginHistoryAdmin)
 admin.site.register(SMSMessage, SMSMessageAdmin)
+admin.site.register(SMSMessagePart, SMSMessagePartAdmin)
 admin.site.register(Notification, NotificationAdmin)
 admin.site.register(UserLog, UserLogAdmin)
+admin.site.register(ClientTransaction, ClientTransactionAdmin)
+admin.site.register(VendorTransaction, VendorTransactionAdmin)
