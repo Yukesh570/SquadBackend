@@ -41,6 +41,7 @@ class VendorRateFilter(django_filters.FilterSet):
         fields = {
             "ratePlan": ["exact", "icontains", "isnull"],
             "country": ["exact", "icontains", "isnull"],
+            "network": ["exact", "icontains", "isnull"],
             "currencyCode": ["exact", "icontains", "isnull"],
             "timeZone": ["exact", "icontains", "isnull"],
             "MCC": ["exact", "icontains", "isnull"],

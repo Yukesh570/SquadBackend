@@ -6,4 +6,4 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size_query_param = (
         "page_size"  # clients can control page size with ?page_size=...
     )
-    max_page_size = 100
+    max_page_size = 1000
