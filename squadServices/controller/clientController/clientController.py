@@ -16,6 +16,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
 from squadServices.models.clientModel.client import Client, IpWhitelist
+from squadServices.models.company import Company
 from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.users import UserLog
 from squadServices.serializer.clientSerializer.clientSerializer import (
@@ -35,6 +36,7 @@ class ClientFilter(ExtendedFilterSet):
     # balanceAlertAmount = django_filters.CharFilter(lookup_expr="icontains")
     # allowNetting = django_filters.CharFilter(lookup_expr="icontains")
     # createdAt = django_filters.DateFromToRangeFilter()
+    company = django_filters.NumberFilter()
 
     class Meta:
         model = Client

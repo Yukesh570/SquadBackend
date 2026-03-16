@@ -33,7 +33,6 @@ ALLOWED_HOSTS = [
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -41,6 +40,7 @@ INSTALLED_APPS = [
     "squadServices.apps.SquadServicesConfig",
     # "squadServices",
     "rest_framework",
+    "django_filters",
     "corsheaders",
     "drf_spectacular",
     "whitenoise.runserver_nostatic",
