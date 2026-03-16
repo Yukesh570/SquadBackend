@@ -388,6 +388,15 @@ urlpatterns = [
         ),
     ),
     path(
+        "company/addCredit/<str:module>/<int:pk>/",
+        CompanyViewSet.as_view(
+            {
+                "patch": "update_credit_limits",
+                "put": "update_credit_limits",
+            }
+        ),
+    ),
+    path(
         "state/<str:module>/",
         StateViewSet.as_view(
             {
@@ -696,6 +705,9 @@ urlpatterns = [
     path("country/import", country_csv),
     path("operator/import", operators_csv),
     path("status/<str:task_id>/", vendor_rate_import_status),
+    # path(
+    #     "api/reports/detailed/", DetailedReportAPIView.as_view(), name="detailed-report"
+    # ),
 ]
 
 

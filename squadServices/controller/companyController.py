@@ -29,8 +29,9 @@ from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 from rest_framework.decorators import action
-from django.http import StreamingHttpResponse
-from django.db.models import Q
+from decimal import Decimal, InvalidOperation
+from django.utils import timezone
+from rest_framework import status
 
 
 class CompanyCategoryFilter(django_filters.FilterSet):
@@ -321,6 +322,66 @@ class CompanyViewSet(viewsets.ModelViewSet):
         instance.updatedBy = user
         instance.save()
         log_action_delete(user, "Company", instance.name)
+
+    @action(detail=True, methods=["patch"], url_path="update-credit-limits")
+    def update_credit_limits(self, request, pk=None, module=None):
+        module = self.kwargs.get("module")
+        user = self.request.user
+
+        # Check if they have update permissions
+        check_permission(self, "put", module)
+
+        # Fetch the specific company instance
+        company = self.get_object()
+
+        # Extract the fields from the request payload
+        customer_credit_limit = request.data.get("customerCreditLimit")
+        vendor_credit_limit = request.data.get("vendorCreditLimit")
+
+        updated_fields = []
+
+        try:
+            if customer_credit_limit is not None:
+                # Use += to ADD to the existing limit
+                company.customerCreditLimit += Decimal(str(customer_credit_limit))
+                updated_fields.append("customerCreditLimit")
+
+            if vendor_credit_limit is not None:
+                # Use += to ADD to the existing limit
+                company.vendorCreditLimit += Decimal(str(vendor_credit_limit))
+                updated_fields.append("vendorCreditLimit")
+
+        except InvalidOperation:
+            return Response(
+                {"error": "Invalid numeric format for credit limits."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not updated_fields:
+            return Response(
+                {"error": "Please provide customerCreditLimit or vendorCreditLimit."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Update the tracking fields
+        company.updatedBy = user
+        company.updatedAt = timezone.now()
+        updated_fields.extend(["updatedBy", "updatedAt"])
+
+        # Save only the fields that were modified for performance and safety
+        company.save(update_fields=updated_fields)
+
+        # Log the action
+        log_action_update(user, "Company Credit Limits", company.name)
+
+        return Response(
+            {
+                "message": "Credit limits updated successfully.",
+                "customerCreditLimit": company.customerCreditLimit,
+                "vendorCreditLimit": company.vendorCreditLimit,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=["get"], url_path="downloadCsv")
     def csv(self, request, module=None):
