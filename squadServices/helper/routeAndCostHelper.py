@@ -31,7 +31,7 @@ def get_route_and_cost(originating_client, destination_country):
 
     client = route.orginatingClient
     clientCompany = route.orginatingCompany
-
+    mnc_value = route.operator.MNC if route.operator else "All"
     if not vendor.ratePlanName:
         return None, f"Vendor '{vendor.profileName}' has no ratePlan assigned."
 
@@ -86,4 +86,6 @@ def get_route_and_cost(originating_client, destination_country):
         "client_cost": customerRateEntry.rate,
         "route_id": route.id,
         "smpp": smpp_config,
+        "country_code": mcc_integer,
+        "mnc": mnc_value,
     }, None

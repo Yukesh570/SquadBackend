@@ -9,3 +9,4 @@ from .mappingSetup.mappingSetup import MappingSetup
 from .operators.operators import Operators
 from .smpp.smppSMS import SMSMessage
 from .notificationModel.notification import Notification
+from .detailedReport.detailedReport import DetailedSMSReport

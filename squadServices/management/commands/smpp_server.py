@@ -14,6 +14,7 @@ from squadServices.models.connectivityModel.smpp import SMPP
 import secrets
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.country import Country
+from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
 from squadServices.models.operators.operators import Operators
 from squadServices.models.routeManager.customRoute import CustomRoute
 from squadServices.models.smpp.smppSMS import SMSMessage
@@ -85,6 +86,7 @@ class Command(BaseCommand):
         )
 
         if updated_rows > 0:
+
             logger.info(f"DLR Update Success: Message {msg_id} is now {mapped_status}")
         else:
             logger.warning(
@@ -445,6 +447,24 @@ class Command(BaseCommand):
                 amount=route_data["total_client_cost"],
                 balanceSpent=client_obj.usedCredit,
                 description=f"Sent SMS {sms_message_obj.message_id}",
+            )
+            DetailedSMSReport.objects.create(
+                message=sms_message_obj,
+                text_message_id=sms_message_obj.message_id,
+                senderId=sms_message_obj.systemId,  # or your source address
+                text=sms_message_obj.text,
+                part_total=total_segments,
+                client=client_obj.smppUsername,
+                clientRate=route_data["client_cost"],
+                client_charge=route_data["total_client_cost"],
+                vendor=vendor_obj.profileName,
+                vendorRate=route_data["vendor_cost"],
+                vendor_charge=route_data["total_vendor_cost"],
+                submitStatus="SUBMITTED",
+                operatorMNC=route_data.get("mnc", "Unknown"),
+                request_time=sms_message_obj.createdAt,
+                destination=sms_message_obj.destination,
+                countryMCC=route_data.get("country_code", "Unknown"),
             )
 
         logger.info(f"Ledger updated for Msg {sms_message_obj.message_id}")

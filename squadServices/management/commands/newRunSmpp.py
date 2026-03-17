@@ -8,6 +8,10 @@ from django.core.management.base import BaseCommand
 from squadServices.models.smpp.smppSMS import SMSMessage, SMSMessagePart
 from django.utils import timezone
 import smpplib.exceptions
+from squadServices.models.detailedReport.detailedReport import (
+    DetailedSMSReport,
+)
+from django.utils import timezone
 
 # Turn on X-Ray Vision for raw network packets
 logging.basicConfig(level=logging.DEBUG)
@@ -205,9 +209,20 @@ class Command(BaseCommand):
 
             if part_id:
                 # Link the vendor's tracking ID to our PART row
-                SMSMessagePart.objects.filter(id=part_id).update(
-                    vendor_msg_id=vendor_id
+
+                part = (
+                    SMSMessagePart.objects.filter(id=part_id)
+                    .select_related("message")
+                    .first()
                 )
+                if part:
+                    part.vendor_msg_id = vendor_id
+                    part.save(update_fields=["vendor_msg_id"])
+
+                    # 2. UPDATE THE DETAILED REPORT (Master Record)
+                    DetailedSMSReport.objects.filter(message=part.message).update(
+                        vendor_msg_id=vendor_id  # Sync vendor ID to report for easy searching
+                    )
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"Linked Part #{part_id} to Vendor ID: {vendor_id}"
@@ -243,12 +258,26 @@ class Command(BaseCommand):
                 new_status = status_map.get(v_stat, "SUBMITTED")
 
                 # Update using the Vendor ID
-                updated = SMSMessagePart.objects.filter(vendor_msg_id=v_id).update(
+                SMSMessagePart.objects.filter(vendor_msg_id=v_id).update(
                     submit_status=new_status
                 )
-                if updated:
-                    self.stdout.write(
-                        self.style.SUCCESS(f"DLR: {v_id} is now {new_status}")
-                    )
+                print(
+                    f"--- Updated Part with Vendor ID {v_id} to status {new_status} ---"
+                )
+                # 2. Update Report using the VENDOR ID
+                update_data = {
+                    "submitStatus": new_status,
+                }
+                if new_status == "DELIVERED":
+                    update_data["delivery_time"] = timezone.now()
+
+                # CRITICAL: Filter by vendor_msg_id to match your model
+
+                DetailedSMSReport.objects.filter(vendor_msg_id__iexact=v_id).update(
+                    **update_data
+                )
+                self.stdout.write(
+                    self.style.SUCCESS(f"DLR: {v_id} is now {new_status}")
+                )
         except Exception as e:
             logger.error(f"DLR Error: {e}")

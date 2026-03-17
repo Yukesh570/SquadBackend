@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework import viewsets, status
 from squad.task import sendEmailTask
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.action import (
     log_action_create,
     log_action_delete,
@@ -12,24 +13,28 @@ from squadServices.helper.action import (
 )
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
+from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
 from squadServices.models.email import EmailTemplate
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.smpp.smppSMS import SMSMessage
 from squadServices.models.users import UserLog, UserType
+from squadServices.serializer.detailReportSerializer.detailReportSerializer import (
+    DetailedReportSerializer,
+)
 from squadServices.serializer.navSerializer import (
     GetSerializer,
     NavItemSerializer,
     NavUserRelationSerializer,
 )
 from django.db.models import Max
-
-from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 from django.db import transaction
+from rest_framework import generics
 
 
 class NavItemFilter(django_filters.FilterSet):
@@ -356,3 +361,48 @@ def sendMail(request):
     )
 
     return Response({"detail": "Email task queued."}, status=status.HTTP_202_ACCEPTED)
+
+
+class DetailReportFilter(ExtendedFilterSet):
+    class Meta:
+        model = DetailedSMSReport
+        # Define the fields and their allowed standard lookups
+        fields = {
+            # TEXT FIELDS: Support Equals, Contains, Is Empty
+            "message__message_id": ["exact", "icontains", "isnull"],
+            "senderId": ["exact", "icontains", "isnull"],
+            "text_message_id": ["exact", "icontains"],
+            "vendor_msg_id": ["exact", "icontains"],
+            "text": ["exact", "icontains"],
+            "part_total": ["exact", "icontains"],
+            "clientRate": ["exact", "icontains"],
+            "client": ["exact", "icontains"],
+            "client_charge": ["exact", "icontains"],
+            "countryMCC": ["exact", "icontains"],
+            "operatorMNC": ["exact", "icontains"],
+            # RELATIONSHIP FIELDS:
+            "destination": ["exact", "icontains"],
+            "vendor": ["exact", "icontains"],
+            "vendorRate": ["exact", "icontains"],
+            "vendor_charge": ["exact", "icontains"],
+            "submitStatus": ["exact", "icontains"],
+            "request_time": ["exact", "gt", "lt", "range", "isnull"],
+            "delivery_time": ["exact", "gt", "lt", "range"],
+        }
+
+
+class DetailedReportAPIView(generics.ListAPIView):
+    serializer_class = DetailedReportSerializer
+    pagination_class = StandardResultsSetPagination
+    authentication_classes = [JWTAuthentication]
+
+    permission_classes = [IsAuthenticated]
+
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DetailReportFilter
+
+    def get_queryset(self):
+        # Because we built a flat, denormalized reporting table,
+        # we do not need select_related anymore. It's incredibly fast!
+        return DetailedSMSReport.objects.all().order_by("-request_time")

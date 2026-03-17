@@ -76,11 +76,13 @@ class SMSMessage(models.Model):
 class SMSMessagePart(models.Model):
     STATUS_CHOICES = (
         ("QUEUED", "Queued"),
-        ("DELIVERED", "Delivered"),  # <--- Add this!
+        ("DELIVERED", "Delivered"),
         ("SUBMITTED", "Submitted"),
         ("FAILED", "Failed"),
     )
-
+    text = models.TextField(
+        null=True, blank=True, help_text="The decoded text chunk for this segment"
+    )
     # Links back to the parent message
     message = models.ForeignKey(
         "SMSMessage", related_name="parts", on_delete=models.CASCADE

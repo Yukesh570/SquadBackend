@@ -68,6 +68,7 @@ from squadServices.controller.user import (
 )
 from squadServices.controller.userLogController import UserLogViewSet
 from squadServices.controller.views import (
+    DetailedReportAPIView,
     GetNavUserRelationViewSet,
     NavItemViewSet,
     NavUserRelationViewSet,
@@ -705,9 +706,9 @@ urlpatterns = [
     path("country/import", country_csv),
     path("operator/import", operators_csv),
     path("status/<str:task_id>/", vendor_rate_import_status),
-    # path(
-    #     "api/reports/detailed/", DetailedReportAPIView.as_view(), name="detailed-report"
-    # ),
+    path(
+        "api/reports/detailed/", DetailedReportAPIView.as_view(), name="detailed-report"
+    ),
 ]
 
 

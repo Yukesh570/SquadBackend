@@ -4,10 +4,12 @@ from django.contrib.auth.admin import UserAdmin
 from squadServices.models.campaign import Campaign, CampaignContact, Template
 from squadServices.models.clientModel.client import Client, IpWhitelist
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
+from django.utils.html import format_html
 
 from squadServices.models.connectivityModel.smpp import SMPP
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
+from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
 from squadServices.models.email import EmailHost, EmailTemplate
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.navItem import NavItem, NavUserRelation
@@ -465,6 +467,7 @@ class IpWhiteListAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "ip",
+        "client",
         "isDeleted",
         "createdAt",
         "updatedAt",
@@ -511,6 +514,80 @@ class VendorTransactionAdmin(admin.ModelAdmin):
     )
     search_fields = ("ip",)
     readonly_fields = ("createdAt", "updatedAt")
+
+
+@admin.register(DetailedSMSReport)
+class DetailedSMSReportAdmin(admin.ModelAdmin):
+    # Columns to show in the list view
+    list_display = (
+        "request_time",
+        "client",
+        "destination",
+        "vendor",
+        # "formatted_margin",
+        "colored_status",
+        "vendor_msg_id",
+    )
+
+    # Sidebar filters
+    list_filter = ("submitStatus", "client", "vendor", "request_time")
+
+    # Search bar (searching across key identifiers)
+    search_fields = ("destination", "vendor_msg_id", "text_message_id", "text")
+
+    # Read-only fields (usually you don't want to edit financial logs manually)
+    readonly_fields = ("request_time", "delivery_time")
+
+    # Organize the detail view into sections
+    fieldsets = (
+        (
+            "Identifiers",
+            {"fields": ("message", "senderId", "text_message_id", "vendor_msg_id")},
+        ),
+        (
+            "Message Content",
+            {
+                "fields": (
+                    "text",
+                    "part_total",
+                    "destination",
+                    "countryMCC",
+                    "operatorMNC",
+                )
+            },
+        ),
+        ("Financials (Client)", {"fields": ("client", "clientRate", "client_charge")}),
+        ("Financials (Vendor)", {"fields": ("vendor", "vendorRate", "vendor_charge")}),
+        (
+            "Status & Timing",
+            {"fields": ("submitStatus", "request_time", "delivery_time")},
+        ),
+    )
+
+    # # Custom method to show Margin with colors
+    # def formatted_margin(self, obj):
+    #     margin = obj.client_charge - obj.vendor_charge
+    #     color = "green" if margin > 0 else "red"
+
+    #     return format_html(
+    #         '<span style="color: {}; font-weight: bold;">${}</span>', color, margin
+    #     )
+
+    # formatted_margin.short_description = "Margin"
+
+    # Custom method to color-code the Status
+    def colored_status(self, obj):
+
+        colors = {
+            "DELIVERED": "green",
+            "FAILED": "red",
+            "SUBMITTED": "orange",
+            "QUEUED": "gray",
+        }
+        color = colors.get(obj.submitStatus, "black")
+        return format_html('<b style="color: {};">{}</b>', color, obj.submitStatus)
+
+    colored_status.short_description = "Status"
 
 
 admin.site.register(CustomRoute, CustomRouteAdmin)

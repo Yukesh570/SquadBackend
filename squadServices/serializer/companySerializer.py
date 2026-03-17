@@ -15,6 +15,11 @@ class CompanyStatusSerializer(serializers.ModelSerializer):
 
 
 class CompanySerializer(serializers.ModelSerializer):
+    statusName = serializers.CharField(source="status.name", read_only=True)
+    countryName = serializers.CharField(source="country.name", read_only=True)
+    currencyCode = serializers.CharField(source="currency.code", read_only=True)
+
+    # woooorrrrkkkkiiiinnng
     class Meta:
         model = Company
         fields = [
@@ -31,6 +36,9 @@ class CompanySerializer(serializers.ModelSerializer):
             "state",
             "category",
             "status",
+            "statusName",
+            "currencyCode",
+            "countryName",
             "currency",
             "timeZone",
             "businessEntity",

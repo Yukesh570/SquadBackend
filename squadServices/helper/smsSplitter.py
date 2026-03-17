@@ -13,11 +13,13 @@ def create_message_parts(sms_message_obj, text):
     # 1. Determine Encoding & Chunk Sizes
     # If there are emojis/special chars, we use UCS-2 (utf-16be)
     if any(ord(c) > 127 for c in text):
-        text_bytes = text.encode("utf-16be")
+        encoding_used = "utf-16be"  # <--- Track encoding for decoding later
+        text_bytes = text.encode(encoding_used)
         max_single = 140  # Max bytes for a single UCS-2 SMS
         max_multi = 134  # Max bytes per chunk when splitting UCS-2
     else:
-        text_bytes = text.encode("latin1", errors="ignore")
+        encoding_used = "latin1"  # <--- Track encoding for decoding later
+        text_bytes = text.encode(encoding_used, errors="ignore")
         max_single = 160  # Max bytes for a single GSM/Latin1 SMS
         max_multi = 153  # Max bytes per chunk when splitting GSM/Latin1
 
@@ -27,6 +29,7 @@ def create_message_parts(sms_message_obj, text):
     if len(text_bytes) <= max_single:
         part = SMSMessagePart.objects.create(
             message=sms_message_obj,
+            text=text,  # <--- SAVE FULL TEXT HERE
             part_no=1,
             part_total=1,
             udh_ref=0,
@@ -55,9 +58,10 @@ def create_message_parts(sms_message_obj, text):
 
         # Combine the header + the text chunk
         full_payload = udh + chunk
-
+        decoded_chunk_text = chunk.decode(encoding_used, errors="ignore")
         part = SMSMessagePart.objects.create(
             message=sms_message_obj,
+            text=decoded_chunk_text,  # <--- SAVE CHUNK TEXT HERE
             part_no=part_no,
             part_total=total_parts,
             udh_ref=udh_ref,
