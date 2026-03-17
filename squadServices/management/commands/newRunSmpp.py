@@ -14,8 +14,10 @@ from squadServices.models.detailedReport.detailedReport import (
 from django.utils import timezone
 
 # Turn on X-Ray Vision for raw network packets
-logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("smpplib").setLevel(logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
+# logging.getLogger("smpplib").setLevel(logging.DEBUG)
+logging.getLogger("smpplib").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
