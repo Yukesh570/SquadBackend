@@ -76,7 +76,7 @@ class VendorTransactionViewSet(ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend]
-    filterset_class = ClientTransactionFilter
+    filterset_class = VendorTransactionFilter
 
     def get_queryset(self):
         module = self.kwargs.get("module")
