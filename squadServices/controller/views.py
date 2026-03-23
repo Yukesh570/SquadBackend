@@ -13,6 +13,8 @@ from squadServices.helper.action import (
 )
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
+from squadServices.models.clientModel.client import Client
+from squadServices.models.company import Company
 from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
 from squadServices.models.email import EmailTemplate
 from squadServices.models.navItem import NavItem, NavUserRelation
@@ -27,6 +29,7 @@ from squadServices.serializer.navSerializer import (
     NavItemSerializer,
     NavUserRelationSerializer,
 )
+from django.template import Template, Context
 from django.db.models import Max
 from rest_framework.decorators import action
 from rest_framework.decorators import api_view
@@ -361,6 +364,71 @@ def sendMail(request):
     )
 
     return Response({"detail": "Email task queued."}, status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(["POST"])
+def sendMailToClient(request):
+    templateName = request.data.get("templateName")
+    clientId = request.data.get("clientId")
+
+    # Grab the custom recipients from the frontend, if any exist
+    custom_recipients = request.data.get("recipient_list")
+    attachments = []
+
+    # Safe DB Fetching
+    try:
+        templateObj = EmailTemplate.objects.get(name=templateName, isDeleted=False)
+        clientData = Client.objects.select_related("company").get(id=clientId)
+    except (EmailTemplate.DoesNotExist, Client.DoesNotExist):
+        return Response({"error": "Template or Client not found."}, status=404)
+
+    contextData = {
+        "username": clientData.smppUsername,
+        "password": clientData.smppPassword,
+    }
+
+    # Render the template
+    djangoTemplete = Template(templateObj.content)
+    renderedMessage = djangoTemplete.render(Context(contextData))
+    fromEmail = templateObj.emailServer.smtpUser if templateObj.emailServer else None
+    emailHostId = templateObj.emailServer.id if templateObj.emailServer else None
+
+    # RECIPIENT LOGIC
+    if custom_recipients:
+        # If frontend sent a string like "a@b.com, c@d.com"
+        if isinstance(custom_recipients, str):
+            recipientList = [email.strip() for email in custom_recipients.split(",")]
+        # If frontend sent an actual array ["a@b.com"]
+        elif isinstance(custom_recipients, list):
+            recipientList = custom_recipients
+    else:
+        # Fallback to the company email if frontend didn't provide a list
+        recipientList = [clientData.company.companyEmail]
+
+    # Attachments
+    for file_obj in request.FILES.getlist("attachments"):
+        import base64
+
+        attachments.append(
+            {
+                "name": file_obj.name,
+                "type": file_obj.content_type,
+                "content": base64.b64encode(file_obj.read()).decode("utf-8"),
+            }
+        )
+    print("========fromEmail=================", fromEmail)
+
+    print("=========================", recipientList)
+    sendEmailTask.delay(
+        templateObj.subject,
+        renderedMessage,
+        fromEmail,
+        recipientList,
+        emailHostId,
+        attachments if attachments else None,
+    )
+
+    return Response({"detail": "Email task queued."}, status=202)
 
 
 class DetailReportFilter(ExtendedFilterSet):

@@ -46,7 +46,11 @@ class EmailHost(models.Model):
 class EmailTemplate(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
+    subject = models.CharField(max_length=255)
     content = models.TextField()
+    emailServer = models.ForeignKey(
+        EmailHost, on_delete=models.SET_NULL, null=True, blank=True
+    )
     isDeleted = models.BooleanField(default=False)
 
     createdBy = models.ForeignKey(

@@ -86,7 +86,7 @@ class TemplateAdmin(admin.ModelAdmin):
 
 class EmailTemplateAdmin(admin.ModelAdmin):
     model = EmailTemplate
-    list_display = ("id", "name")
+    list_display = ("id", "name", "subject", "emailServer")
     readonly_fields = ("createdAt", "updatedAt")
 
 

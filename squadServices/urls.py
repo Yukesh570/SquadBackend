@@ -73,6 +73,7 @@ from squadServices.controller.views import (
     NavItemViewSet,
     NavUserRelationViewSet,
     sendMail,
+    sendMailToClient,
 )
 from squadServices.helper.csvDownloadHelper import csv_status, download_file
 from squadServices.controller.rateManagementController.vendorRateController import (
@@ -219,6 +220,11 @@ urlpatterns = [
     path(
         "email/",
         sendMail,
+        name="sendmail",
+    ),
+    path(
+        "sendMailToClient/",
+        sendMailToClient,
         name="sendmail",
     ),
     path(

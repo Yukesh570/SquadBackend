@@ -22,4 +22,4 @@ class EmailHostSerializer(serializers.ModelSerializer):
 class EmailTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmailTemplate
-        fields = ["id", "name", "content"]
+        fields = ["id", "name", "subject", "content", "emailServer"]
