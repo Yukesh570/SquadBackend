@@ -760,6 +760,7 @@ urlpatterns = [
         DownloadInvoicePDFView.as_view(),
         name="download-invoice-pdf",
     ),
+    # generate
     path(
         "finance/generate-invoice/",
         GenerateClientInvoiceView.as_view(),
