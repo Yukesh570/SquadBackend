@@ -170,7 +170,7 @@ class ClinetInvoiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         module = self.kwargs.get("module")
-        # check_permission(self, "read", module)
+        check_permission(self, "read", module)
         return ClientInvoice.objects.filter(isDeleted=False)
 
 
