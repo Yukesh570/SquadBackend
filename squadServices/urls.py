@@ -6,7 +6,8 @@ from drf_spectacular.views import (
 
 from django.conf import settings
 from django.conf.urls.static import static
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 
 from squadServices.controller.campaignController import (
     CampaignContactViewSet,
@@ -36,6 +37,14 @@ from squadServices.controller.countryController import (
 from squadServices.controller.emailController import (
     EmailHostViewSet,
     EmailTemplateViewSet,
+)
+from squadServices.controller.financeController.invoiceController import (
+    ClinetInvoiceViewSet,
+    DownloadInvoicePDFView,
+    GenerateClientInvoiceView,
+)
+from squadServices.controller.financeController.invoiceSetupController import (
+    InvoiceSetupViewSet,
 )
 from squadServices.controller.mappingSetupController.mappingSetupController import (
     MappingSetupViewSet,
@@ -86,8 +95,12 @@ from squadServices.helper.csvUploadHelper import (
     vendor_rate_import_status,
 )
 
+router = DefaultRouter()
+
+# router.register(r"invoiceSetup", InvoiceSetupViewSet, basename="InvoiceSetup")
 
 urlpatterns = [
+    path("", include(router.urls)),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "api/docs/",
@@ -691,6 +704,33 @@ urlpatterns = [
         ),
     ),
     path(
+        "invoiceSetup/<str:module>/",
+        InvoiceSetupViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "invoiceSetup/<str:module>/<int:pk>/",
+        InvoiceSetupViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "clientInvoice/<str:module>/",
+        ClinetInvoiceViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+    ),
+    path(
         "clientTransaction/<str:module>/",
         ClientTransactionViewSet.as_view(
             {
@@ -714,6 +754,16 @@ urlpatterns = [
     path("status/<str:task_id>/", vendor_rate_import_status),
     path(
         "api/reports/detailed/", DetailedReportAPIView.as_view(), name="detailed-report"
+    ),
+    path(
+        "api/finance/invoice/<int:invoice_id>/download/",
+        DownloadInvoicePDFView.as_view(),
+        name="download-invoice-pdf",
+    ),
+    path(
+        "finance/generate-invoice/",
+        GenerateClientInvoiceView.as_view(),
+        name="generate-invoice",
     ),
 ]
 

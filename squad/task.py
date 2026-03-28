@@ -16,12 +16,19 @@ import json
 
 from squadServices import models
 from squadServices.models.country import Country
+from squadServices.models.finanace.invoice import ClientInvoice
+from squadServices.models.finanace.invoiceSetup import InvoiceSetup
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.serializer.roleManagementSerializer.vendorRateSerializer import (
     VendorRateImportSerializer,
 )
+from io import BytesIO
+from django.template.loader import get_template
+from django.core.files.base import ContentFile
+from xhtml2pdf import pisa
+from num2words import num2words
 from dateutil import parser
 import logging
 import re  # Make sure this is at the top of your file!
@@ -450,3 +457,63 @@ def import_operator_task(self, filepath, user_id, task_id):
 
     except Exception as e:
         redis_client.set(task_id, f"error:{str(e)}")
+
+
+@shared_task
+def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
+    """
+    Background task to render HTML, convert to PDF, and save it to the database.
+    """
+    print(f"Generating PDF for invoice {invoice_id}")
+    try:
+        # 1. Fetch the invoice from the DB using the ID passed to Celery
+        invoice_obj = ClientInvoice.objects.get(id=invoice_id)
+    except ClientInvoice.DoesNotExist:
+        print(f"Error: Invoice {invoice_id} not found.")
+        return False
+    client_company = invoice_obj.client.company
+    setup_rules = InvoiceSetup.objects.filter(
+        company=client_company, isDeleted=False
+    ).first()
+    if setup_rules and setup_rules.billingAddressOverride:
+        final_address = setup_rules.billingAddressOverride
+    else:
+        final_address = client_company.address
+    # 2. Calculate the final math
+    total_amount = invoice_obj.totalAmount
+    grand_total = float(total_amount) + float(tax_amount)
+
+    # 3. Convert numbers to words
+    amount_in_words = num2words(int(grand_total))
+
+    # 4. Prepare Context
+    context = {
+        "client": invoice_obj.client,
+        "client_name": client_company.name,
+        "client_email": client_company.companyEmail,
+        "client_phone": client_company.phone,
+        "client_address": final_address,
+        "breakdown": breakdown_data,
+        "total_amount": total_amount,
+        "tax_amount": tax_amount,
+        "grand_total": grand_total,
+        "amount_in_words": amount_in_words,
+        "bank_details": "Global IME Bank, Acct: 1234567890",
+    }
+
+    # 5. Render HTML
+    template = get_template("finance/invoice_pdf.html")
+    html_string = template.render(context)
+
+    # 6. Convert to PDF
+    pdf_buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(BytesIO(html_string.encode("UTF-8")), dest=pdf_buffer)
+
+    # 7. Save to the Database
+    if not pisa_status.err:
+        pdf_name = f"{invoice_obj.invoiceNumber}.pdf"
+        invoice_obj.invoicePdf.save(pdf_name, ContentFile(pdf_buffer.getvalue()))
+        invoice_obj.save()
+        return f"Successfully generated PDF for Invoice {invoice_obj.invoiceNumber}"
+
+    return f"Failed to generate PDF for Invoice {invoice_obj.invoiceNumber}"

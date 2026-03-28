@@ -11,6 +11,7 @@ from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
 from squadServices.models.email import EmailHost, EmailTemplate
+from squadServices.models.finanace.invoice import ClientInvoice
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.network import Network
@@ -25,6 +26,8 @@ from squadServices.models.transaction.transaction import (
     VendorTransaction,
 )
 from squadServices.models.users import User, UserLog, UserLoginHistory
+
+from squadServices.models.finanace.invoiceSetup import InvoiceSetup
 
 
 class CustomUserAdmin(UserAdmin):
@@ -588,6 +591,215 @@ class DetailedSMSReportAdmin(admin.ModelAdmin):
         return format_html('<b style="color: {};">{}</b>', color, obj.submitStatus)
 
     colored_status.short_description = "Status"
+
+
+from django.contrib import admin
+
+
+@admin.register(InvoiceSetup)
+class InvoiceSetupAdmin(admin.ModelAdmin):
+    # 1. Columns displayed in the main list view
+    list_display = (
+        "id",
+        "get_company_name",
+        "invoiceFrequency",
+        "dueDays",
+        "isTaxApplied",
+        "isDeleted",
+        "updatedAt",
+    )
+
+    # 2. Filters on the right sidebar
+    list_filter = (
+        "invoiceFrequency",
+        "isTaxApplied",
+        "isDeleted",
+        "createdAt",
+    )
+
+    # 3. Search bar functionality (Searches inside the linked Company table too!)
+    search_fields = (
+        "company__name",
+        "billingAddressOverride",
+    )
+
+    # 4. Prevent users from editing audit fields manually
+    readonly_fields = (
+        "createdAt",
+        "updatedAt",
+        "createdBy",
+        "updatedBy",
+    )
+
+    # 5. Organize the detail view into clean, collapsible sections
+    fieldsets = (
+        (
+            "Company & Entity Information",
+            {
+                "fields": (
+                    "company",
+                    "billingAddressOverride",
+                    # Uncomment the next line if you kept the businessEntity field in this model
+                    # 'businessEntity',
+                )
+            },
+        ),
+        (
+            "Billing Configuration",
+            {
+                "fields": (
+                    "invoiceFrequency",
+                    "dueDays",
+                )
+            },
+        ),
+        (
+            "Tax Information",
+            {
+                "fields": (
+                    "isTaxApplied",
+                    "tax",
+                )
+            },
+        ),
+        (
+            "Audit Trail (Read Only)",
+            {
+                "classes": ("collapse",),  # Makes this section collapsible
+                "fields": (
+                    "isDeleted",
+                    "createdBy",
+                    "createdAt",
+                    "updatedBy",
+                    "updatedAt",
+                ),
+            },
+        ),
+    )
+
+    # --- Custom Column Methods ---
+    def get_company_name(self, obj):
+        return obj.company.name if obj.company else "-"
+
+    get_company_name.short_description = "Company Name"
+    get_company_name.admin_order_field = (
+        "company__name"  # Allows sorting by this column
+    )
+
+    # --- Automatic User Tracking ---
+    def save_model(self, request, obj, form, change):
+        """
+        Automatically sets createdBy and updatedBy based on the logged-in admin user.
+        """
+        if getattr(obj, "createdBy", None) is None:
+            obj.createdBy = request.user
+        obj.updatedBy = request.user
+
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(ClientInvoice)
+class ClientInvoiceAdmin(admin.ModelAdmin):
+    # 1. Columns displayed in the main list view
+    list_display = (
+        "invoiceNumber",
+        "get_client_name",
+        "totalAmount",
+        "status",
+        "billingPeriodStart",
+        "billingPeriodEnd",
+        "has_pdf",
+    )
+
+    # 2. Filters on the right sidebar
+    list_filter = (
+        "status",
+        "isDeleted",
+        "invoiceDate",
+        "createdAt",
+    )
+
+    # 3. Search bar functionality
+    search_fields = (
+        "invoiceNumber",
+        "client__name",
+    )
+
+    # 4. Prevent users from manually editing audit fields
+    readonly_fields = (
+        "createdAt",
+        "updatedAt",
+        "createdBy",
+    )
+
+    # 5. Organize the detail view into clean, collapsible sections
+    fieldsets = (
+        ("Invoice Core Details", {"fields": ("invoiceNumber", "client", "status")}),
+        (
+            "Billing & Financials",
+            {
+                "fields": (
+                    "totalAmount",
+                    "invoiceDate",
+                    "billingPeriodStart",
+                    "billingPeriodEnd",
+                )
+            },
+        ),
+        ("Generated Documents", {"fields": ("invoicePdf",)}),
+        (
+            "Audit Trail (Read Only)",
+            {
+                "classes": ("collapse",),  # Makes this section collapsible
+                "fields": ("isDeleted", "createdBy", "createdAt", "updatedAt"),
+            },
+        ),
+    )
+
+    # 6. Register our custom action
+    actions = ["mark_as_paid", "mark_as_sent"]
+
+    # --- Custom Column Methods ---
+    def get_client_name(self, obj):
+        return obj.client.name if obj.client else "-"
+
+    get_client_name.short_description = "Client Name"
+    get_client_name.admin_order_field = "client__name"
+
+    def has_pdf(self, obj):
+        """Displays a simple True/False icon indicating if the PDF has been generated"""
+        return bool(obj.invoicePdf)
+
+    has_pdf.boolean = True
+    has_pdf.short_description = "PDF Ready"
+
+    # --- Custom Admin Actions (Bulk Operations) ---
+    @admin.action(description="Mark selected invoices as PAID")
+    def mark_as_paid(self, request, queryset):
+        updated_count = queryset.update(status="PAID")
+        self.message_user(
+            request, f"Successfully marked {updated_count} invoices as PAID."
+        )
+
+    @admin.action(description="Mark selected invoices as SENT")
+    def mark_as_sent(self, request, queryset):
+        updated_count = queryset.update(status="SENT")
+        self.message_user(
+            request, f"Successfully marked {updated_count} invoices as SENT."
+        )
+
+    # --- Automatic User Tracking ---
+    def save_model(self, request, obj, form, change):
+        """
+        Automatically sets createdBy based on the logged-in admin user.
+        """
+        if getattr(obj, "createdBy", None) is None:
+            obj.createdBy = request.user
+
+        # If you added updatedBy to your ClientInvoice model, uncomment this:
+        # obj.updatedBy = request.user
+
+        super().save_model(request, obj, form, change)
 
 
 admin.site.register(CustomRoute, CustomRouteAdmin)

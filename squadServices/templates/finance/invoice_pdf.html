@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        color: #333;
+      }
+      .header {
+        width: 100%;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .header table {
+        width: 100%;
+        border: none;
+      }
+      .title {
+        font-size: 24px;
+        font-weight: bold;
+      }
+      .squad-hive {
+        font-size: 28px;
+        color: #5bc0de;
+        font-weight: bold;
+        text-align: right;
+      }
+
+      .invoiced-to {
+        margin-bottom: 30px;
+        line-height: 1.5;
+      }
+      .invoiced-to h4 {
+        margin-bottom: 5px;
+        font-size: 16px;
+      }
+
+      .invoice-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+      }
+      .invoice-table th,
+      .invoice-table td {
+        border: 1px solid #000;
+        padding: 8px;
+        text-align: left;
+      }
+      .invoice-table th {
+        background-color: #f8f9fa;
+      }
+
+      .totals-row td {
+        font-weight: bold;
+      }
+      .amount-in-words {
+        margin-top: 10px;
+        font-weight: normal;
+      }
+
+      .payment-info {
+        margin-top: 50px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="title">Invoice</div>
+      <table>
+        <tr>
+          <td style="text-align: left">{{client_name}}</td>
+          <td class="squad-hive">SQUAD HIVE</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="invoiced-to">
+      <h4>Invoiced To</h4>
+      {{ client.name }}<br />
+      {{client_address }}<br />
+      {{ client_email }}<br />
+      {{ client_phone }}
+    </div>
+
+    <h4>Invoice Summary</h4>
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th>S. No.</th>
+          <th>Particular</th>
+          <th>SMS Volume</th>
+          <th>Charges (Rs)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in breakdown %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ item.particular }}</td>
+          <td>{{ item.volume }}</td>
+          <td>{{ item.charge }}</td>
+        </tr>
+        {% endfor %}
+
+        <tr class="totals-row">
+          <td colspan="3">Total Amount</td>
+          <td>{{ total_amount }}</td>
+        </tr>
+        <tr>
+          <td colspan="3" class="totals-row">Tax</td>
+          <td>{{ tax_amount }}</td>
+        </tr>
+        <tr class="totals-row">
+          <td colspan="3">Grand Total</td>
+          <td>{{ grand_total }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="amount-in-words">In Word: {{ amount_in_words|title }} Rs</div>
+
+    <div class="payment-info">
+      Payment Information:<br />
+      Bank Detail<br />
+      <span style="font-weight: normal">{{ bank_details }}</span>
+    </div>
+  </body>
+</html>
