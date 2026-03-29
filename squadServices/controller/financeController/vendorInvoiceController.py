@@ -10,17 +10,14 @@ from datetime import datetime
 import uuid
 
 # Adjust imports based on your exact file structure
-from squad.task import generate_invoice_pdf_task
+from squad.task import generate_invoice_pdf_task, generate_vendorInvoice_pdf_task
 from squadServices.controller.companyController import ExtendedFilterSet
-from squadServices.models.clientModel.client import Client
-from squadServices.models.finanace.invoice import ClientInvoice
+from squadServices.models.finanace.invoice import VendorInvoice
 from squadServices.models.finanace.invoiceSetup import InvoiceSetup
-from squadServices.models.transaction.transaction import ClientTransaction
-from squadServices.serializer.financeSerailizer.clientInvoiceSerializer import (
-    ClientInvoiceSerializer,
-)
+
+from squadServices.models.transaction.transaction import VendorTransaction
 from squadServices.serializer.financeSerailizer.generateIncoiveSerializer import (
-    GenerateInvoiceRequestSerializer,
+    GenerateVendorInvoiceRequestSerializer,
 )
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 from io import BytesIO
@@ -40,23 +37,27 @@ from squadServices.helper.action import (
 from django.shortcuts import get_object_or_404
 from django.http import FileResponse
 
+from squadServices.serializer.financeSerailizer.vendorInvoiceSerializer import (
+    VendorInvoiceSerializer,
+)
 
-class GenerateClientInvoiceView(APIView):
+
+class GenerateVendorInvoiceView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        request=GenerateInvoiceRequestSerializer,
+        request=GenerateVendorInvoiceRequestSerializer,
         responses={
             200: OpenApiResponse(description="Preview data successfully returned"),
             201: OpenApiResponse(description="Invoice generated and saved to database"),
             400: OpenApiResponse(description="Validation Error (e.g., bad dates)"),
         },
-        summary="Generate or Preview a Client Invoice",
+        summary="Generate or Preview a Vendor Invoice",
         description="Pass action='PREVIEW' to calculate totals without saving. Pass action='GENERATE' to officially create the invoice record.",
     )
     def post(self, request):
         # 1. Catch and Validate the Form Data
-        serializer = GenerateInvoiceRequestSerializer(data=request.data)
+        serializer = GenerateVendorInvoiceRequestSerializer(data=request.data)
 
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -64,7 +65,7 @@ class GenerateClientInvoiceView(APIView):
         # 2. Extract Validated Data
         data = serializer.validated_data
         accountManager = data.get("accountManager")
-        client = data["client"]
+        vendor = data["vendor"]
         from_date = data["fromDate"]
         to_date = data["toDate"]
         invoice_date = data["invoiceDate"]
@@ -73,7 +74,7 @@ class GenerateClientInvoiceView(APIView):
         action_type = request.data.get("action", "GENERATE").upper()
         # tax
         setupRule = InvoiceSetup.objects.filter(
-            company=client.company, isDeleted=False
+            company=vendor.company, isDeleted=False
         ).first()
 
         tax_amount = 0
@@ -81,9 +82,9 @@ class GenerateClientInvoiceView(APIView):
             tax_amount = setupRule.tax
 
         # 3. CALCULATE THE TOTAL AMOUNT (The core billing logic)
-        # We query the ClientTransaction table for all records in this date range
-        transaction_summary = ClientTransaction.objects.filter(
-            client=client,
+        # We query the VendorTransaction table for all records in this date range
+        transaction_summary = VendorTransaction.objects.filter(
+            vendor=vendor,
             transactionType="DEDUCTION",
             createdAt__date__gte=from_date,
             createdAt__date__lte=to_date,
@@ -113,11 +114,12 @@ class GenerateClientInvoiceView(APIView):
             ]
 
             context = {
-                "client": client,
-                "client_name": client.company.name,
-                "client_email": client.company.companyEmail,
-                "client_phone": client.company.phone,
-                "client_address": client.company.address,  # Use your setupRule override if needed
+                "vendor": vendor,
+                "vendor_name": vendor.company.name,
+                "vendor_email": vendor.company.companyEmail,
+                "vendor_phone": vendor.company.phone,
+                "vendor_currency": vendor.company.currency,
+                "vendor_address": vendor.company.address,  # Use your setupRule override if needed
                 "breakdown": breakdown_data,
                 "total_amount": calculated_amount,
                 "tax_amount": tax_amount,
@@ -128,7 +130,7 @@ class GenerateClientInvoiceView(APIView):
                 "status": "DRAFT",
             }
             # 2. Render the HTML
-            template = get_template("finance/invoice_pdf.html")
+            template = get_template("finance/vendorInvoice_pdf.html")
             html_string = template.render(context)
 
             # 3. Create the PDF in Memory (NO DATABASE!)
@@ -161,8 +163,8 @@ class GenerateClientInvoiceView(APIView):
         # Save to the database safely using an atomic transaction
         try:
             with transaction.atomic():
-                invoice = ClientInvoice.objects.create(
-                    client=client,
+                invoice = VendorInvoice.objects.create(
+                    vendor=vendor,
                     accountManager=accountManager,
                     billingPeriodStart=from_date,
                     billingPeriodEnd=to_date,
@@ -183,7 +185,7 @@ class GenerateClientInvoiceView(APIView):
                 }
             ]
 
-            generate_invoice_pdf_task.delay(
+            generate_vendorInvoice_pdf_task.delay(
                 invoice.id, breakdown_data, tax_amount=tax_amount
             )
             return Response(
@@ -204,19 +206,39 @@ class GenerateClientInvoiceView(APIView):
             )
 
 
-class ClinetInvoiceViewSet(viewsets.ModelViewSet):
-    serializer_class = ClientInvoiceSerializer
+class VendorInvoiceFilter(ExtendedFilterSet):
+
+    vendor = django_filters.NumberFilter()
+
+    class Meta:
+        model = VendorInvoice
+        fields = {
+            "vendor__profileName": ["exact", "icontains", "isnull"],
+            "accountManager__username": ["exact", "icontains", "isnull"],
+            "invoiceNumber": ["exact", "icontains", "isnull"],
+            "billingPeriodStart": ["exact", "gt", "lt", "range", "isnull"],
+            "billingPeriodEnd": ["exact", "gt", "lt", "range", "isnull"],
+            "invoiceDate": ["exact", "gt", "lt", "range", "isnull"],
+            "totalAmount": ["exact", "gt", "lt", "range", "isnull"],
+            "totalSegments": ["exact", "gt", "lt", "range", "isnull"],
+            "createdAt": ["exact", "range", "gt", "lt"],
+        }
+
+
+class VendorInvoiceViewSet(viewsets.ModelViewSet):
+    serializer_class = VendorInvoiceSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend]
+    filterset_class = VendorInvoiceFilter
 
     def get_queryset(self):
         module = self.kwargs.get("module")
         # check_permission(self, "read", module)
-        return ClientInvoice.objects.filter(isDeleted=False)
+        return VendorInvoice.objects.filter(isDeleted=False)
 
 
-class DownloadInvoicePDFView(APIView):
+class DownloadVendorInvoicePDFView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
@@ -229,7 +251,7 @@ class DownloadInvoicePDFView(APIView):
     )
     def get(self, request, invoice_id):
         # 1. Fetch the invoice record
-        invoice = get_object_or_404(ClientInvoice, id=invoice_id)
+        invoice = get_object_or_404(VendorInvoice, id=invoice_id)
 
         # 2. Check if Celery has actually finished generating it yet!
         if not invoice.invoicePdf or not invoice.invoicePdf.name:

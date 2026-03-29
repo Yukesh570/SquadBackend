@@ -10,6 +10,7 @@ from squadServices.helper.pagination import StandardResultsSetPagination
 
 from squadServices.models.users import UserLoginHistory
 from squadServices.serializer.userSerializer import (
+    AllUserSerializer,
     RegisterSerializer,
     UserLoginHistorySerializer,
     UserSerializer,
@@ -125,6 +126,14 @@ class UserInformationView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class AllUserInformationView(generics.ListAPIView):
+    serializer_class = AllUserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return User.objects.all()
 
 
 class UserProfileView(generics.ListAPIView):

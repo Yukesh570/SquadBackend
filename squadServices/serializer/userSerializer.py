@@ -64,3 +64,10 @@ class UserWithLoginHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "email", "phone", "userType", "last_login"]
+
+
+class AllUserSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = User
+        fields = ["id", "username"]

@@ -70,7 +70,7 @@
       <div class="title">Invoice</div>
       <table>
         <tr>
-          <td style="text-align: left">{{client_name}}</td>
+          <td style="text-align: left">{{vendor_name}}</td>
           <td class="squad-hive">SQUAD HIVE</td>
         </tr>
       </table>
@@ -78,10 +78,10 @@
 
     <div class="invoiced-to">
       <h4>Invoiced To</h4>
-      {{ client.name }}<br />
-      {{client_address }}<br />
-      {{ client_email }}<br />
-      {{ client_phone }}
+      {{ vendor.profileName }}<br />
+      {{vendor_address }}<br />
+      {{ vendor_email }}<br />
+      {{ vendor_phone }}
     </div>
 
     <h4>Invoice Summary</h4>
@@ -91,7 +91,7 @@
           <th>S. No.</th>
           <th>Particular</th>
           <th>SMS Volume</th>
-          <th>Charges ({{client_currency}})</th>
+          <th>Charges ({{vendor_currency}})</th>
         </tr>
       </thead>
       <tbody>
@@ -120,7 +120,7 @@
     </table>
 
     <div class="amount-in-words">
-      In Word: {{ amount_in_words|title }} {{client_currency}}
+      In Word: {{ amount_in_words|title }} {{vendor_currency}}
     </div>
 
     <div class="payment-info">

@@ -38,13 +38,18 @@ from squadServices.controller.emailController import (
     EmailHostViewSet,
     EmailTemplateViewSet,
 )
-from squadServices.controller.financeController.invoiceController import (
+from squadServices.controller.financeController.clientInvoiceController import (
     ClinetInvoiceViewSet,
     DownloadInvoicePDFView,
     GenerateClientInvoiceView,
 )
 from squadServices.controller.financeController.invoiceSetupController import (
     InvoiceSetupViewSet,
+)
+from squadServices.controller.financeController.vendorInvoiceController import (
+    DownloadVendorInvoicePDFView,
+    GenerateVendorInvoiceView,
+    VendorInvoiceViewSet,
 )
 from squadServices.controller.mappingSetupController.mappingSetupController import (
     MappingSetupViewSet,
@@ -68,6 +73,7 @@ from squadServices.controller.transaction.transactionController import (
     VendorTransactionViewSet,
 )
 from squadServices.controller.user import (
+    AllUserInformationView,
     ChangePasswordView,
     EditUserView,
     LoginView,
@@ -113,6 +119,7 @@ urlpatterns = [
     path("user/edit/<int:pk>/", EditUserView.as_view(), name="edit-user"),
     path("userLog/", UserProfileView.as_view()),
     path("userInformation/", UserInformationView.as_view()),
+    path("allUserInformation/", AllUserInformationView.as_view()),
     path("changePassword/", ChangePasswordView.as_view(), name="changePassword"),
     path(
         "navItem/<str:module>/",
@@ -731,6 +738,14 @@ urlpatterns = [
         ),
     ),
     path(
+        "vendorInvoice/<str:module>/",
+        VendorInvoiceViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+    ),
+    path(
         "clientTransaction/<str:module>/",
         ClientTransactionViewSet.as_view(
             {
@@ -756,15 +771,25 @@ urlpatterns = [
         "api/reports/detailed/", DetailedReportAPIView.as_view(), name="detailed-report"
     ),
     path(
-        "api/finance/invoice/<int:invoice_id>/download/",
+        "api/finance/client-invoice/<int:invoice_id>/download/",
         DownloadInvoicePDFView.as_view(),
+        name="download-invoice-pdf",
+    ),
+    path(
+        "api/finance/vendor-invoice/<int:invoice_id>/download/",
+        DownloadVendorInvoicePDFView.as_view(),
         name="download-invoice-pdf",
     ),
     # generate
     path(
-        "finance/generate-invoice/",
+        "finance/generate-clientInvoice/",
         GenerateClientInvoiceView.as_view(),
         name="generate-invoice",
+    ),
+    path(
+        "finance/generate-vendorInvoice/",
+        GenerateVendorInvoiceView.as_view(),
+        name="generate-vendor-invoice",
     ),
 ]
 

@@ -1,11 +1,11 @@
-from squadServices.models.finanace.invoice import ClientInvoice
 from rest_framework import serializers
 from squad import settings
+from squadServices.models.finanace.invoice import VendorInvoice
 
 
-class ClientInvoiceSerializer(serializers.ModelSerializer):
-    # 1. Make the Client ID human-readable for your React tables
-    clientName = serializers.CharField(source="client.name", read_only=True)
+class VendorInvoiceSerializer(serializers.ModelSerializer):
+    # 1. Make the Vendor ID human-readable for your React tables
+    vendorName = serializers.CharField(source="vendor.profileName", read_only=True)
 
     accountManagerName = serializers.CharField(
         source="accountManager.username", read_only=True, default="Unassigned"
@@ -15,14 +15,14 @@ class ClientInvoiceSerializer(serializers.ModelSerializer):
     downloadUrl = serializers.SerializerMethodField()
 
     class Meta:
-        model = ClientInvoice
+        model = VendorInvoice
         fields = [
             "id",
             "accountManager",
             "accountManagerName",
             "invoiceNumber",
-            "client",
-            "clientName",
+            "vendor",
+            "vendorName",
             "billingPeriodStart",
             "billingPeriodEnd",
             "invoiceDate",
@@ -48,6 +48,6 @@ class ClientInvoiceSerializer(serializers.ModelSerializer):
         """
         if obj.invoicePdf and obj.invoicePdf.name:
             return (
-                f"{settings.BACKEND_API}/api/finance/client-invoice/{obj.id}/download/"
+                f"{settings.BACKEND_API}/api/finance/vendor-invoice/{obj.id}/download/"
             )
         return None
