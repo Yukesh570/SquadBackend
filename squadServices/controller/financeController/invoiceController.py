@@ -208,7 +208,7 @@ class DownloadInvoicePDFView(APIView):
             # 'inline' tells the browser to open it in a new tab.
             # Change to 'attachment' if you want to force a download directly to their computer.
             response["Content-Disposition"] = (
-                f'inline; filename="{invoice.invoiceNumber}.pdf"'
+                f'attachment; filename="{invoice.invoiceNumber}.pdf"'
             )
 
             return response
