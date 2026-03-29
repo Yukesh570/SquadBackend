@@ -498,7 +498,7 @@ def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
         "tax_amount": tax_amount,
         "grand_total": grand_total,
         "amount_in_words": amount_in_words,
-        "bank_details": "Global IME Bank, Acct: 1234567890",
+        "bank_details": "Global IME Bank",
     }
 
     # 5. Render HTML

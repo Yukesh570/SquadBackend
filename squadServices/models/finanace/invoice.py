@@ -22,11 +22,20 @@ class ClientInvoice(models.Model):
     # The actual calculated data
     invoiceNumber = models.CharField(max_length=50, unique=True)
     totalAmount = models.DecimalField(max_digits=12, decimal_places=4, default=0.00)
+    totalSegments = models.IntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="DRAFT")
 
     # Where you will store the generated PDF report
     invoicePdf = models.FileField(
         upload_to="invoices/clients/%Y/%m/", null=True, blank=True
+    )
+    accountManager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_invoices",
+        help_text="The internal user managing this client/invoice.",
     )
 
     # --- Standard Audit Fields ---

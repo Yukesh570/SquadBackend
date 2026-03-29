@@ -1,4 +1,5 @@
 import django_filters
+import num2words
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -22,7 +23,10 @@ from squadServices.serializer.financeSerailizer.generateIncoiveSerializer import
     GenerateInvoiceRequestSerializer,
 )
 from drf_spectacular.utils import extend_schema, OpenApiResponse
-
+from io import BytesIO
+from django.template.loader import get_template
+from xhtml2pdf import pisa
+from num2words import num2words
 from django_filters.rest_framework import DjangoFilterBackend
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
@@ -59,6 +63,7 @@ class GenerateClientInvoiceView(APIView):
 
         # 2. Extract Validated Data
         data = serializer.validated_data
+        accountManager = data.get("accountManager")
         client = data["client"]
         from_date = data["fromDate"]
         to_date = data["toDate"]
@@ -96,18 +101,56 @@ class GenerateClientInvoiceView(APIView):
 
         # --- PREVIEW LOGIC ---
         if action_type == "PREVIEW":
+            grand_total = float(calculated_amount) + float(tax_amount)
+            amount_in_words = num2words(int(grand_total))
             # Do NOT save to the database. Just return the math so the frontend can display it.
-            return Response(
+            breakdown_data = [
                 {
-                    "message": "Preview generated successfully.",
-                    "clientName": client.name,
-                    "billingPeriod": f"{from_date} to {to_date}",
-                    "totalSms": total_sms_sent,
-                    "totalAmount": calculated_amount,
-                    "status": "DRAFT",
-                },
-                status=status.HTTP_200_OK,
+                    "particular": "Standard SMS",
+                    "volume": total_sms_sent,
+                    "charge": float(calculated_amount),
+                }
+            ]
+
+            context = {
+                "client": client,
+                "client_name": client.company.name,
+                "client_email": client.company.companyEmail,
+                "client_phone": client.company.phone,
+                "client_address": client.company.address,  # Use your setupRule override if needed
+                "breakdown": breakdown_data,
+                "total_amount": calculated_amount,
+                "tax_amount": tax_amount,
+                "grand_total": grand_total,
+                "amount_in_words": amount_in_words,
+                "bank_details": "Global IME Bank",
+                "invoice_number": "DRAFT-PREVIEW",  # Fake number for the preview
+                "status": "DRAFT",
+            }
+            # 2. Render the HTML
+            template = get_template("finance/invoice_pdf.html")
+            html_string = template.render(context)
+
+            # 3. Create the PDF in Memory (NO DATABASE!)
+            pdf_buffer = BytesIO()
+            pisa_status = pisa.CreatePDF(
+                BytesIO(html_string.encode("UTF-8")), dest=pdf_buffer
             )
+
+            if pisa_status.err:
+                return Response(
+                    {"error": "Failed to generate PDF preview"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            # 4. CRITICAL: Rewind the buffer to the beginning before reading it!
+            pdf_buffer.seek(0)
+
+            # 5. Return the file directly to the browser
+            response = FileResponse(pdf_buffer, content_type="application/pdf")
+            response["Content-Disposition"] = 'inline; filename="Invoice-Preview.pdf"'
+
+            return response
 
         # --- GENERATE LOGIC ---
         # Generate a unique Invoice Number (e.g., INV-20260315-A1B2)
@@ -120,17 +163,17 @@ class GenerateClientInvoiceView(APIView):
             with transaction.atomic():
                 invoice = ClientInvoice.objects.create(
                     client=client,
+                    accountManager=accountManager,
                     billingPeriodStart=from_date,
                     billingPeriodEnd=to_date,
                     invoiceDate=invoice_date,
                     invoiceNumber=invoice_number,
                     totalAmount=calculated_amount,
+                    totalSegments=total_sms_sent,
                     status="GENERATED",
                     createdBy=request.user,
                 )
 
-                # TODO: Trigger Celery Task here to generate the actual PDF
-                # generate_invoice_pdf_task.delay(invoice.id)
             # Build the breakdown data (Must be standard Python dictionaries/lists so Celery can serialize it)
             breakdown_data = [
                 {
@@ -140,7 +183,6 @@ class GenerateClientInvoiceView(APIView):
                 }
             ]
 
-            # 🔥 Send it to Celery! Notice we pass invoice.id, NOT the invoice object
             generate_invoice_pdf_task.delay(
                 invoice.id, breakdown_data, tax_amount=tax_amount
             )
@@ -170,7 +212,7 @@ class ClinetInvoiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         module = self.kwargs.get("module")
-        check_permission(self, "read", module)
+        # check_permission(self, "read", module)
         return ClientInvoice.objects.filter(isDeleted=False)
 
 

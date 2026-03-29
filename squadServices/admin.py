@@ -734,7 +734,10 @@ class ClientInvoiceAdmin(admin.ModelAdmin):
 
     # 5. Organize the detail view into clean, collapsible sections
     fieldsets = (
-        ("Invoice Core Details", {"fields": ("invoiceNumber", "client", "status")}),
+        (
+            "Invoice Core Details",
+            {"fields": ("invoiceNumber", "accountManager", "client", "status")},
+        ),
         (
             "Billing & Financials",
             {

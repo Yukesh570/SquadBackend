@@ -7,9 +7,8 @@ class ClientInvoiceSerializer(serializers.ModelSerializer):
     # 1. Make the Client ID human-readable for your React tables
     clientName = serializers.CharField(source="client.name", read_only=True)
 
-    # 2. Show who generated it (falls back to "System" if no user is attached)
-    createdByName = serializers.CharField(
-        source="createdBy.get_full_name", read_only=True, default="System"
+    accountManagerName = serializers.CharField(
+        source="accountManager.username", read_only=True, default="Unassigned"
     )
 
     # 3. Create a custom field that gives React the exact URL to download the PDF
@@ -19,6 +18,8 @@ class ClientInvoiceSerializer(serializers.ModelSerializer):
         model = ClientInvoice
         fields = [
             "id",
+            "accountManager",
+            "accountManagerName",
             "invoiceNumber",
             "client",
             "clientName",
@@ -26,11 +27,11 @@ class ClientInvoiceSerializer(serializers.ModelSerializer):
             "billingPeriodEnd",
             "invoiceDate",
             "totalAmount",
+            "totalSegments",
             "status",
             "invoicePdf",
             "downloadUrl",
             "createdAt",
-            "createdByName",
         ]
 
         # Protect financial data! The frontend should NEVER be able to
