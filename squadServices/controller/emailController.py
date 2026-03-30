@@ -19,6 +19,8 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 
 class EmailHostFilter(django_filters.FilterSet):
@@ -110,6 +112,28 @@ class EmailTemplateViewSet(viewsets.ModelViewSet):
         module = self.kwargs.get("module")
         check_permission(self, "read", module)
         return EmailTemplate.objects.filter(isDeleted=False)
+
+    @action(
+        detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated]
+    )
+    def availableVariables(self, request, module=None):
+        """
+        Returns a list of all supported email variables so the frontend
+        can build a dropdown menu for the template editor.
+        """
+        variables = [
+            {
+                "tag": "{{username}}",
+                "label": "Username",
+            },
+            {
+                "tag": "{{password}}",
+                "label": "Password",
+            },
+            # You can easily add more here later! (e.g., {{invoice_amount}})
+        ]
+
+        return Response(variables)
 
     def perform_create(self, serializer):
         module = self.kwargs.get("module")

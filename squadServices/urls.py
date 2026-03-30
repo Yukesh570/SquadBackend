@@ -217,6 +217,11 @@ urlpatterns = [
         name="templateCreate",
     ),
     path(
+        "emailTemplateVariables/",
+        EmailTemplateViewSet.as_view({"get": "availableVariables"}),
+        name="emailTemplate-variables",
+    ),
+    path(
         "emailTemplate/<str:module>/",
         EmailTemplateViewSet.as_view({"get": "list", "post": "create"}),
         name="emailTemplateCreate",
