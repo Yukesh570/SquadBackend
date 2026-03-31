@@ -1,6 +1,7 @@
 from email import errors
 import os
 from time import time
+from urllib.parse import urljoin
 from celery import shared_task
 from django.apps import apps
 from django.core.mail import send_mail
@@ -460,7 +461,7 @@ def import_operator_task(self, filepath, user_id, task_id):
 
 
 @shared_task
-def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
+def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0, base_url=""):
     """
     Background task to render HTML, convert to PDF, and save it to the database.
     """
@@ -475,6 +476,8 @@ def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
     setup_rules = InvoiceSetup.objects.filter(
         company=client_company, isDeleted=False
     ).first()
+    business_entity = setup_rules.businessEntity if setup_rules else None
+
     if setup_rules and setup_rules.billingAddressOverride:
         final_address = setup_rules.billingAddressOverride
     else:
@@ -485,10 +488,24 @@ def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
 
     # 3. Convert numbers to words
     amount_in_words = num2words(int(grand_total))
-
+    # Prepare the logo URL safely
+    logo_url = None
+    if business_entity and business_entity.companyLogo:
+        if base_url:
+            # This safely combines "http://domain.com/" and "/media/logos/img.png"
+            logo_url = urljoin(base_url, business_entity.companyLogo.url)
+        else:
+            logo_url = business_entity.companyLogo.url
     # 4. Prepare Context
     context = {
         "client": invoice_obj.client,
+        "entity_name": (business_entity.companyName if business_entity else "N/A"),
+        "entity_logo": logo_url,
+        "entity_address": (
+            business_entity.businessAddress if business_entity else "N/A"
+        ),
+        "entity_email": (business_entity.emailAddress if business_entity else "N/A"),
+        "entity_phone": (business_entity.phone if business_entity else "N/A"),
         "client_name": client_company.name,
         "client_email": client_company.companyEmail,
         "client_currency": client_company.currency,
@@ -521,7 +538,9 @@ def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
 
 
 @shared_task
-def generate_vendorInvoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
+def generate_vendorInvoice_pdf_task(
+    invoice_id, breakdown_data, tax_amount=0, base_url=""
+):
     """
     Background task to render HTML, convert to PDF, and save it to the database.
     """
@@ -536,6 +555,8 @@ def generate_vendorInvoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
     setup_rules = InvoiceSetup.objects.filter(
         company=vendor_company, isDeleted=False
     ).first()
+    business_entity = setup_rules.businessEntity if setup_rules else None
+
     if setup_rules and setup_rules.billingAddressOverride:
         final_address = setup_rules.billingAddressOverride
     else:
@@ -546,10 +567,23 @@ def generate_vendorInvoice_pdf_task(invoice_id, breakdown_data, tax_amount=0):
 
     # 3. Convert numbers to words
     amount_in_words = num2words(int(grand_total))
-
+    logo_url = None
+    if business_entity and business_entity.companyLogo:
+        if base_url:
+            # This safely combines "http://domain.com/" and "/media/logos/img.png"
+            logo_url = urljoin(base_url, business_entity.companyLogo.url)
+        else:
+            logo_url = business_entity.companyLogo.url
     # 4. Prepare Context
     context = {
         "vendor": invoice_obj.vendor,
+        "entity_name": (business_entity.companyName if business_entity else "N/A"),
+        "entity_logo": logo_url,
+        "entity_address": (
+            business_entity.businessAddress if business_entity else "N/A"
+        ),
+        "entity_email": (business_entity.emailAddress if business_entity else "N/A"),
+        "entity_phone": (business_entity.phone if business_entity else "N/A"),
         "vendor_name": vendor_company.name,
         "vendor_email": vendor_company.companyEmail,
         "vendor_currency": vendor_company.currency,

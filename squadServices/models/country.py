@@ -87,7 +87,42 @@ class Currency(models.Model):
 
 
 class Entity(models.Model):
-    name = models.CharField(max_length=100)
+    # --- Dropdown Choices ---
+    WEEK_DAYS = [
+        ("SUNDAY", "Sunday"),
+        ("MONDAY", "Monday"),
+    ]
+
+    # --- Core Business Information ---
+    legalEntityName = models.CharField(max_length=255)
+    companyName = models.CharField(max_length=255)
+
+    # Assuming this tracks the current or starting invoice number for the company
+    invoiceNumber = models.IntegerField(default=1)  # sequence tracker or a counter
+    weekCommencing = models.CharField(
+        max_length=10, choices=WEEK_DAYS, default="MONDAY"
+    )
+
+    vatRegistrationNumber = models.CharField(max_length=50, blank=True, null=True)
+
+    # --- Contact & Location ---
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    emailAddress = models.EmailField(
+        blank=True, null=True
+    )  # Validates proper email format
+    businessAddress = models.TextField(
+        blank=True, null=True
+    )  # TextField allows multi-line addresses
+
+    # --- Financial & Branding ---
+    bankAccountDetail = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Store Bank Name, Account Number, and Routing/Swift codes here.",
+    )
+    companyLogo = models.ImageField(upload_to="entities/logos/", blank=True, null=True)
+
+    # --- Standard Audit Fields (From your original code) ---
     isDeleted = models.BooleanField(default=False)
     createdAt = models.DateTimeField(auto_now_add=True)
     updatedAt = models.DateTimeField(auto_now=True)
@@ -108,7 +143,7 @@ class Entity(models.Model):
         ordering = ["-updatedAt"]
 
     def __str__(self):
-        return self.name
+        return self.companyName
 
 
 class TimeZone(models.Model):

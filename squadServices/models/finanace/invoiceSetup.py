@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 
 from squadServices.models.company import Company
+from squadServices.models.country import Entity
 
 # Assuming you have these models already, adjust imports as needed
 # from squadServices.models.businessEntity import BusinessEntity
@@ -30,8 +31,10 @@ class InvoiceSetup(models.Model):
     )
 
     # D. Select Business Entity
-    businessEntity = models.CharField(
-        max_length=100,
+    businessEntity = models.ForeignKey(
+        Entity,  # Replace with actual model if imported
+        on_delete=models.CASCADE,
+        related_name="entityInvoiceSetups",
     )
     # businessEntity = models.ForeignKey(
     #     BusinessEntity, # Replace with actual model if imported

@@ -1,37 +1,23 @@
 import json
 from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import viewsets, status
 from squad.utils.authenticators import JWTAuthentication
 from squadServices.helper.action import (
     log_action_create,
     log_action_delete,
     log_action_update,
 )
-from squadServices.helper.csvDownloadHelper import start_csv_export
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
-from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.network import Network
-from squadServices.models.notificationModel.notification import Notification
-from squadServices.models.users import UserLog
-from squadServices.serializer.countrySerializer import (
-    CountrySerializer,
-    CurrencySerializer,
-    EntitySerializer,
-    StateSerializer,
-    TimeZoneSerializer,
-)
 
-from rest_framework.permissions import AllowAny
-from rest_framework.decorators import action
-from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
 from squadServices.serializer.networkSerializer import NetworkSerializer
+
+from rest_framework import viewsets
 
 
 class NetworkFilter(django_filters.FilterSet):

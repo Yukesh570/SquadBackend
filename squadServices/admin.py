@@ -200,19 +200,63 @@ class currencyAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
-class entityAdmin(admin.ModelAdmin):
-    model = Entity
+class EntityAdmin(admin.ModelAdmin):
+    # The columns shown on the main list page
     list_display = (
         "id",
-        "name",
+        "companyName",
+        "legalEntityName",
+        "invoiceNumber",
+        "emailAddress",
         "isDeleted",
         "createdAt",
-        "updatedAt",
-        "createdBy",
-        "updatedBy",
     )
-    search_fields = ("name",)
+
+    # 🚨 CRITICAL FIX: We search by the new fields since 'name' is gone
+    search_fields = ("companyName", "legalEntityName", "emailAddress", "phone")
+
+    # Adds a handy filter sidebar on the right
+    list_filter = ("isDeleted", "weekCommencing", "createdAt")
+
+    # Fields that cannot be edited manually
     readonly_fields = ("createdAt", "updatedAt")
+
+    # Organizes the detail view into clean, logical sections
+    fieldsets = (
+        (
+            "Core Business Info",
+            {
+                "fields": (
+                    "companyName",
+                    "legalEntityName",
+                    "companyLogo",
+                    "invoiceNumber",
+                    "weekCommencing",
+                    "vatRegistrationNumber",
+                )
+            },
+        ),
+        (
+            "Contact & Location",
+            {"fields": ("emailAddress", "phone", "businessAddress")},
+        ),
+        ("Financial Details", {"fields": ("bankAccountDetail",)}),
+        (
+            "Audit & Tracking",
+            {
+                "fields": (
+                    "isDeleted",
+                    "createdBy",
+                    "updatedBy",
+                    "createdAt",
+                    "updatedAt",
+                ),
+                "classes": (
+                    "collapse",
+                ),  # This hides the audit fields by default so the page looks cleaner!
+            },
+        ),
+    )
 
 
 class timeZoneAdmin(admin.ModelAdmin):
@@ -640,7 +684,7 @@ class InvoiceSetupAdmin(admin.ModelAdmin):
                     "company",
                     "billingAddressOverride",
                     # Uncomment the next line if you kept the businessEntity field in this model
-                    # 'businessEntity',
+                    "businessEntity",
                 )
             },
         ),
@@ -927,7 +971,7 @@ admin.site.register(CompanyStatus, companyStatusAdmin)
 admin.site.register(Country, countryAdmin)
 admin.site.register(State, stateAdmin)
 admin.site.register(Currency, currencyAdmin)
-admin.site.register(Entity, entityAdmin)
+admin.site.register(Entity, EntityAdmin)
 admin.site.register(TimeZone, timeZoneAdmin)
 admin.site.register(Company, companyAdmin)
 admin.site.register(SMPP, connectivityAdmin)

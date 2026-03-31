@@ -3,8 +3,6 @@ from django.db import models
 
 from squadServices.models.company import Company
 from squadServices.models.connectivityModel.smpp import SMPP
-from squadServices.models.country import Country, Currency, Entity, State, TimeZone
-from squadServices.models.rateManagementModel.vendorRate import VendorRate
 
 CONNECTION_TYPE_CHOICES = [
     ("SMPP", "SMPP"),

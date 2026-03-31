@@ -69,14 +69,14 @@ class GenerateVendorInvoiceView(APIView):
         from_date = data["fromDate"]
         to_date = data["toDate"]
         invoice_date = data["invoiceDate"]
-
+        base_url = request.build_absolute_uri("/")
         # Check if the frontend sent {"action": "PREVIEW"} or {"action": "GENERATE"}
         action_type = request.data.get("action", "GENERATE").upper()
         # tax
         setupRule = InvoiceSetup.objects.filter(
             company=vendor.company, isDeleted=False
         ).first()
-
+        business_entity = setupRule.businessEntity if setupRule else None
         tax_amount = 0
         if setupRule and setupRule.isTaxApplied:
             tax_amount = setupRule.tax
@@ -115,6 +115,21 @@ class GenerateVendorInvoiceView(APIView):
 
             context = {
                 "vendor": vendor,
+                "entity_name": (
+                    business_entity.companyName if business_entity else "N/A"
+                ),
+                "entity_logo": (
+                    request.build_absolute_uri(business_entity.companyLogo.url)
+                    if business_entity and business_entity.companyLogo
+                    else None
+                ),
+                "entity_address": (
+                    business_entity.businessAddress if business_entity else "N/A"
+                ),
+                "entity_email": (
+                    business_entity.emailAddress if business_entity else "N/A"
+                ),
+                "entity_phone": (business_entity.phone if business_entity else "N/A"),
                 "vendor_name": vendor.company.name,
                 "vendor_email": vendor.company.companyEmail,
                 "vendor_phone": vendor.company.phone,
@@ -186,7 +201,7 @@ class GenerateVendorInvoiceView(APIView):
             ]
 
             generate_vendorInvoice_pdf_task.delay(
-                invoice.id, breakdown_data, tax_amount=tax_amount
+                invoice.id, breakdown_data, tax_amount=tax_amount, base_url=base_url
             )
             return Response(
                 {

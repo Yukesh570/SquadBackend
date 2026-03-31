@@ -38,7 +38,7 @@ class InvoiceSetupFilter(ExtendedFilterSet):
         fields = {
             "company__name": ["exact", "icontains", "isnull"],
             "billingAddressOverride": ["exact", "icontains", "isnull"],
-            "businessEntity": ["exact", "icontains", "isnull"],
+            "businessEntity__legalEntityName": ["exact", "icontains", "isnull"],
             "invoiceFrequency": ["exact", "icontains", "isnull"],
             "isTaxApplied": ["exact", "icontains", "isnull"],
             "tax": ["exact", "icontains", "isnull"],

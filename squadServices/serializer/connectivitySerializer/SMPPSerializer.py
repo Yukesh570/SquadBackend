@@ -1,5 +1,4 @@
 from squadServices.models.connectivityModel.smpp import SMPP
-from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from rest_framework import serializers
 
 

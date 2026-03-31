@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 from squad.utils.authenticators import JWTAuthentication
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.action import (
     log_action_create,
     log_action_delete,
@@ -30,6 +31,8 @@ from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
+
+from squadServices.utils import compress_image
 
 
 class CountryFilter(django_filters.FilterSet):
@@ -245,12 +248,25 @@ class CurrencyViewSet(viewsets.ModelViewSet):
         log_action_delete(user, "Currency", instance.name)
 
 
-class EntityFilter(django_filters.FilterSet):
+class EntityFilter(ExtendedFilterSet):
     name = django_filters.CharFilter(lookup_expr="icontains")
 
     class Meta:
         model = Entity
-        fields = ["name"]
+        # Define the fields and their allowed standard lookups
+        fields = {
+            # TEXT FIELDS: Support Equals, Contains, Is Empty
+            "legalEntityName": ["exact", "icontains", "isnull"],
+            "companyName": ["exact", "icontains", "isnull"],
+            "invoiceNumber": ["exact", "icontains"],
+            "weekCommencing": ["exact", "icontains"],
+            "vatRegistrationNumber": ["exact", "icontains"],
+            "phone": ["exact", "icontains"],
+            "emailAddress": ["exact", "icontains"],
+            "businessAddress": ["exact", "icontains"],
+            "bankAccountDetail": ["exact", "icontains"],
+            "createdAt": ["exact", "range", "gt", "lt"],
+        }
 
 
 class EntityViewSet(viewsets.ModelViewSet):
@@ -263,47 +279,77 @@ class EntityViewSet(viewsets.ModelViewSet):
     filterset_class = EntityFilter
 
     def get_queryset(self):
-        if self.action == "list":
-            module = self.kwargs.get("module")
-            check_permission(self, "read", module)
-            return Entity.objects.filter(isDeleted=False)
-        return super().get_queryset()
+        module = self.kwargs.get("module")
+        check_permission(self, "read", module)
+        return Entity.objects.filter(isDeleted=False)
 
     def perform_create(self, serializer):
         module = self.kwargs.get("module")
         user = self.request.user
         check_permission(self, "write", module)
-        name = serializer.validated_data.get("name")
-        exist = Entity.objects.filter(name__iexact=name, isDeleted=False)
+        legalEntityName = serializer.validated_data.get("legalEntityName")
+        exist = Entity.objects.filter(
+            legalEntityName__iexact=legalEntityName, isDeleted=False
+        )
         if exist.exists():
             raise ValidationError(
-                {"error": "Entity for the selected country already exists."}
+                {"error": "An Entity with this legal name already exists."}
             )
-        serializer.save(createdBy=user, updatedBy=user)
-        log_action_create(user, "Entity", serializer.validated_data.get("name"))
+        # --- NEW: Prevent setting invoiceNumber on creation ---
+        # If the user tried to send an invoiceNumber in their POST request,
+        # remove it so the database defaults to 1.
+        if "invoiceNumber" in serializer.validated_data:
+            serializer.validated_data.pop("invoiceNumber")
+        save_kwargs = {"createdBy": user, "updatedBy": user}
+        new_logo = serializer.validated_data.get("companyLogo")
+        if new_logo:
+            save_kwargs["companyLogo"] = compress_image(new_logo)
+        serializer.save(**save_kwargs)
+        log_action_create(
+            user, "Entity", serializer.validated_data.get("legalEntityName")
+        )
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
         user = self.request.user
         check_permission(self, "put", module)
-        name = serializer.validated_data.get("name")
-        if name != serializer.instance.name:
-            exist = Entity.objects.filter(name=name, isDeleted=False)
+        legalEntityName = serializer.validated_data.get("legalEntityName")
+        if legalEntityName != serializer.instance.legalEntityName:
+            exist = Entity.objects.filter(
+                legalEntityName=legalEntityName, isDeleted=False
+            )
             if exist.exists():
                 raise ValidationError(
-                    {"error": "Entity with the same name already exists."}
+                    {"error": "Entity with the same legalEntityName already exists."}
                 )
-        serializer.save(updatedBy=user)
-        log_action_update(user, "Entity", serializer.validated_data.get("name"))
+        # Fetch the existing object from the database to get the old image
+        old_instance = self.get_object()
+        new_logo = serializer.validated_data.get("companyLogo")
+        save_kwargs = {"updatedBy": user}
+        # Check if we have a new logo, an old logo exists, and they aren't the exact same file
+        if (
+            new_logo
+            and old_instance.companyLogo
+            and old_instance.companyLogo != new_logo
+        ):
+            # save=False ensures we don't prematurely save the model before serializer.save()
+            old_instance.companyLogo.delete(save=False)
+            save_kwargs["companyLogo"] = compress_image(new_logo)
+        serializer.save(**save_kwargs)
+        log_action_update(
+            user, "Entity", serializer.validated_data.get("legalEntityName")
+        )
 
     def perform_destroy(self, instance):
         module = self.kwargs.get("module")
         check_permission(self, "delete", module)
         user = self.request.user
+        if instance.companyLogo:
+            instance.companyLogo.delete(save=False)
         instance.isDeleted = True
         instance.updatedBy = user
         instance.save()
-        log_action_delete(user, "Entity", instance.name)
+        log_action_delete(user, "Entity", instance.legalEntityName)
 
 
 class TimeZoneFilter(django_filters.FilterSet):

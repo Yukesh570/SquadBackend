@@ -67,11 +67,27 @@
   </head>
   <body>
     <div class="header">
-      <div class="title">Invoice</div>
-      <table>
+      <div class="title" style="margin-bottom: 20px">Invoice</div>
+      <table style="width: 100%; border: none">
         <tr>
-          <td style="text-align: left">{{vendor_name}}</td>
-          <td class="squad-hive">SQUAD HIVE</td>
+          <td style="text-align: left; vertical-align: top; line-height: 1.5">
+            <strong>{{ entity_name }}</strong><br />
+            {{ entity_address }}<br />
+            {{ entity_phone }}<br />
+            {{ entity_email }}
+          </td>
+
+          <td style="text-align: right; vertical-align: top">
+            {% if entity_logo %}
+            <img
+              src="{{ entity_logo }}"
+              style="height: 112px; width: auto"
+              alt="Company Logo"
+            />
+            {% else %}
+            <div class="squad-hive">SQUAD HIVE</div>
+            {% endif %}
+          </td>
         </tr>
       </table>
     </div>

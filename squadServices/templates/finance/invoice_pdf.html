@@ -12,10 +12,6 @@
         text-align: center;
         margin-bottom: 30px;
       }
-      .header table {
-        width: 100%;
-        border: none;
-      }
       .title {
         font-size: 24px;
         font-weight: bold;
@@ -26,7 +22,6 @@
         font-weight: bold;
         text-align: right;
       }
-
       .invoiced-to {
         margin-bottom: 30px;
         line-height: 1.5;
@@ -35,7 +30,6 @@
         margin-bottom: 5px;
         font-size: 16px;
       }
-
       .invoice-table {
         width: 100%;
         border-collapse: collapse;
@@ -50,7 +44,6 @@
       .invoice-table th {
         background-color: #f8f9fa;
       }
-
       .totals-row td {
         font-weight: bold;
       }
@@ -58,7 +51,6 @@
         margin-top: 10px;
         font-weight: normal;
       }
-
       .payment-info {
         margin-top: 50px;
         font-weight: bold;
@@ -67,19 +59,35 @@
   </head>
   <body>
     <div class="header">
-      <div class="title">Invoice</div>
-      <table>
+      <div class="title" style="margin-bottom: 20px">Invoice</div>
+      <table style="width: 100%; border: none">
         <tr>
-          <td style="text-align: left">{{client_name}}</td>
-          <td class="squad-hive">SQUAD HIVE</td>
+          <td style="text-align: left; vertical-align: top; line-height: 1.5">
+            <strong>{{ entity_name }}</strong><br />
+            {{ entity_address }}<br />
+            {{ entity_phone }}<br />
+            {{ entity_email }}
+          </td>
+
+          <td style="text-align: right; vertical-align: top">
+            {% if entity_logo %}
+            <img
+              src="{{ entity_logo }}"
+              style="height: 112px; width: auto"
+              alt="Company Logo"
+            />
+            {% else %}
+            <div class="squad-hive">SQUAD HIVE</div>
+            {% endif %}
+          </td>
         </tr>
       </table>
     </div>
 
     <div class="invoiced-to">
       <h4>Invoiced To</h4>
-      {{ client.name }}<br />
-      {{client_address }}<br />
+      {{ client_name }}<br />
+      {{ client_address }}<br />
       {{ client_email }}<br />
       {{ client_phone }}
     </div>
@@ -91,7 +99,7 @@
           <th>S. No.</th>
           <th>Particular</th>
           <th>SMS Volume</th>
-          <th>Charges ({{client_currency}})</th>
+          <th>Charges ({{ client_currency }})</th>
         </tr>
       </thead>
       <tbody>
@@ -120,7 +128,7 @@
     </table>
 
     <div class="amount-in-words">
-      In Word: {{ amount_in_words|title }} {{client_currency}}
+      In Word: {{ amount_in_words|title }} {{ client_currency }}
     </div>
 
     <div class="payment-info">

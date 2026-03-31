@@ -27,7 +27,25 @@ class CurrencySerializer(serializers.ModelSerializer):
 class EntitySerializer(serializers.ModelSerializer):
     class Meta:
         model = Entity
-        fields = ["id", "name"]
+        fields = [
+            "id",
+            "companyName",
+            "legalEntityName",
+            "invoiceNumber",
+            "weekCommencing",
+            "vatRegistrationNumber",
+            "phone",
+            "emailAddress",
+            "businessAddress",
+            "bankAccountDetail",
+            "companyLogo",
+            "isDeleted",
+            "createdAt",
+            "updatedAt",
+        ]
+
+        # Protects these fields from being modified by POST/PUT requests
+        read_only_fields = ["id", "createdAt", "updatedAt", "createdBy", "updatedBy"]
 
 
 class TimeZoneSerializer(serializers.ModelSerializer):

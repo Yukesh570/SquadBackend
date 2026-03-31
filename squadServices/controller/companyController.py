@@ -254,7 +254,7 @@ class CompanyFilter(ExtendedFilterSet):
             "status__name": ["exact", "icontains"],
             "currency__name": ["exact", "icontains"],
             "timeZone__name": ["exact", "icontains"],
-            "businessEntity__name": ["exact", "icontains"],
+            "businessEntity__legalEntityName": ["exact", "icontains"],
             # NUMERIC FIELDS: Support Equals, GT, LT, Range (Between)
             "customerCreditLimit": ["exact", "gt", "lt", "range", "isnull"],
             "vendorCreditLimit": ["exact", "gt", "lt", "range"],

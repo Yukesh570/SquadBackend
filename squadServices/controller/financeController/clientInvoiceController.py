@@ -1,5 +1,6 @@
 import django_filters
 import num2words
+from requests import request
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -68,13 +69,14 @@ class GenerateClientInvoiceView(APIView):
         from_date = data["fromDate"]
         to_date = data["toDate"]
         invoice_date = data["invoiceDate"]
-
+        base_url = request.build_absolute_uri("/")
         # Check if the frontend sent {"action": "PREVIEW"} or {"action": "GENERATE"}
         action_type = request.data.get("action", "GENERATE").upper()
         # tax
         setupRule = InvoiceSetup.objects.filter(
             company=client.company, isDeleted=False
         ).first()
+        business_entity = setupRule.businessEntity if setupRule else None
 
         tax_amount = 0
         if setupRule and setupRule.isTaxApplied:
@@ -114,6 +116,21 @@ class GenerateClientInvoiceView(APIView):
 
             context = {
                 "client": client,
+                "entity_name": (
+                    business_entity.companyName if business_entity else "N/A"
+                ),
+                "entity_logo": (
+                    request.build_absolute_uri(business_entity.companyLogo.url)
+                    if business_entity and business_entity.companyLogo
+                    else None
+                ),
+                "entity_address": (
+                    business_entity.businessAddress if business_entity else "N/A"
+                ),
+                "entity_email": (
+                    business_entity.emailAddress if business_entity else "N/A"
+                ),
+                "entity_phone": (business_entity.phone if business_entity else "N/A"),
                 "client_name": client.company.name,
                 "client_email": client.company.companyEmail,
                 "client_phone": client.company.phone,
@@ -185,7 +202,7 @@ class GenerateClientInvoiceView(APIView):
             ]
 
             generate_invoice_pdf_task.delay(
-                invoice.id, breakdown_data, tax_amount=tax_amount
+                invoice.id, breakdown_data, tax_amount=tax_amount, base_url=base_url
             )
             return Response(
                 {
