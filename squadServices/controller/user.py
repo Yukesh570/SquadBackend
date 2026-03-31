@@ -139,6 +139,8 @@ class AllUserInformationView(generics.ListAPIView):
 class UserProfileView(generics.ListAPIView):
     serializer_class = UserLoginHistorySerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
     filter_backends = [DjangoFilterBackend]
     filterset_class = UserLoginHistoryFilter
 

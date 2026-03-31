@@ -51,6 +51,7 @@ class UserLoginHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = UserLoginHistory
         fields = [
+            "id",
             "ipAddress",
             "browser",
             "device",
