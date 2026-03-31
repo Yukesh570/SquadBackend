@@ -141,7 +141,7 @@ class GenerateClientInvoiceView(APIView):
                 "tax_amount": tax_amount,
                 "grand_total": grand_total,
                 "amount_in_words": amount_in_words,
-                "bank_details": "Global IME Bank",
+                "bank_details": business_entity.bankAccountDetail,
                 "invoice_number": "DRAFT-PREVIEW",  # Fake number for the preview
                 "status": "DRAFT",
             }

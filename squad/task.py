@@ -516,7 +516,7 @@ def generate_invoice_pdf_task(invoice_id, breakdown_data, tax_amount=0, base_url
         "tax_amount": tax_amount,
         "grand_total": grand_total,
         "amount_in_words": amount_in_words,
-        "bank_details": "Global IME Bank",
+        "bank_details": business_entity.bankAccountDetail,
     }
 
     # 5. Render HTML
@@ -594,7 +594,7 @@ def generate_vendorInvoice_pdf_task(
         "tax_amount": tax_amount,
         "grand_total": grand_total,
         "amount_in_words": amount_in_words,
-        "bank_details": "Global IME Bank",
+        "bank_details": business_entity.bankAccountDetail if business_entity else "N/A",
     }
 
     # 5. Render HTML
