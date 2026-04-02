@@ -356,7 +356,7 @@ class Command(BaseCommand):
                         )
                     elif new_status == "FAILED":
                         part.failed_at = now
-                        part.failure_reason = content  # Store raw DLR string as reaso
+                        part.failure_reason = content  # Store raw DLR string as reason
                         part.save(
                             update_fields=[
                                 "submit_status",
@@ -407,7 +407,8 @@ class Command(BaseCommand):
         total_parts = all_parts.count()
 
         delivered_count = all_parts.filter(submit_status="DELIVERED").count()
-        failed_count = all_parts.filter(submit_status="FAILED").count()
+        failed_parts = all_parts.filter(submit_status="FAILED")
+        failed_count = failed_parts.count()
 
         new_parent_status = parent_msg.status
 
@@ -420,21 +421,34 @@ class Command(BaseCommand):
             new_parent_status = "partially_delivered"
 
         # Only hit the database if the status actually changed
-        if new_parent_status != parent_msg.status:
+        if new_parent_status != parent_msg.status or failed_count > 0:
             parent_msg.status = new_parent_status
             now = timezone.now()
+            detailed_reason = None
+            if failed_count > 0:
+                reasons = []
+                for part in failed_parts:
+                    # Use the segment's failure reason, or a default if it's missing
+                    reason_text = (
+                        part.failure_reason
+                        if part.failure_reason
+                        else "Unknown vendor error."
+                    )
+                    reasons.append(f"Part {part.part_no}/{total_parts}: {reason_text}")
+
+                # Combine all reasons into a single string separated by newlines
+                detailed_reason = " | ".join(reasons)
+            # -------------------------------------
             if new_parent_status == "delivered":
                 parent_msg.delivered_at = now
             elif new_parent_status == "failed":
                 parent_msg.failed_at = now
-                parent_msg.failure_reason = "All segments failed to deliver."
+                parent_msg.failure_reason = f"All segments failed. {detailed_reason}"
             elif new_parent_status == "partially_delivered":
                 # For partial, we still set delivered_at because SOME of it
                 # reached the user, but we add a note to the failure reason.
                 parent_msg.delivered_at = now
-                parent_msg.failure_reason = (
-                    "Some segments failed, but some were delivered."
-                )
+                parent_msg.failure_reason = f"Partial delivery ({delivered_count}/{total_parts} succeeded). {detailed_reason}"
             parent_msg.save(
                 update_fields=["status", "delivered_at", "failed_at", "failure_reason"]
             )
