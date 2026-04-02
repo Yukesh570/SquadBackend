@@ -5,7 +5,12 @@ import re
 import smpplib.client
 import smpplib.consts
 from django.core.management.base import BaseCommand
-from squadServices.models.smpp.smppSMS import SMSMessage, SMSMessagePart
+from squadServices.models.smpp.smppSMS import (
+    DLREvent,
+    MessageAttempt,
+    SMSMessage,
+    SMSMessagePart,
+)
 from django.utils import timezone
 import smpplib.exceptions
 from squadServices.models.detailedReport.detailedReport import (
@@ -136,19 +141,38 @@ class Command(BaseCommand):
         part.last_submit_at = timezone.now()
         part.save(update_fields=["submit_attempts", "last_submit_at"])
 
-        try:
-            source = parent_msg.systemId if parent_msg.systemId else config.systemID
-            # Ensure text is bytes
-            msg_content = part.short_message
-            final_msg = (
-                bytes(msg_content)
-                if isinstance(msg_content, (memoryview, bytes))
-                else str(msg_content).encode("utf-8")
-            )
+        source = parent_msg.systemId if parent_msg.systemId else config.systemID
+        msg_content = part.short_message
+        final_msg = (
+            bytes(msg_content)
+            if isinstance(msg_content, (memoryview, bytes))
+            else str(msg_content).encode("utf-8")
+        )
 
-            # --- FIX: Generate Sequence BEFORE sending ---
-            next_seq = client.next_sequence()
-            self.sequence_to_part_id[next_seq] = part.id
+        # Generate a unique sequence number for this message and map it to our PART ID
+        next_seq = client.next_sequence()
+        # Think of this as a notebook where your system temporarily writes down tracking information
+        self.sequence_to_part_id[next_seq] = part.id
+
+        # 1. CREATE THE LOG (Record the 'request_payload' here)
+        # started_at is automatically added by Django!
+        attempt_log = MessageAttempt.objects.create(
+            message=parent_msg,
+            segment=part,
+            attempt_number=part.submit_attempts,
+            provider=config.smppHost,
+            status="ATTEMPTING",
+            request_payload={
+                "source_addr": source,
+                "destination_addr": parent_msg.destination,
+                "sequence_number": next_seq,
+                "esm_class": part.esm_class,
+                # Convert the raw bytes to hex so it saves safely in the JSON database field
+                "hex_payload": final_msg.hex(),
+            },
+        )
+
+        try:
 
             client.send_message(
                 source_addr=source,
@@ -159,7 +183,7 @@ class Command(BaseCommand):
                 dest_addr_npi=config.destNPI,
                 data_coding=0,  # Try 0 for standard GSM text
                 esm_class=part.esm_class,
-                short_message=final_msg,
+                short_message=final_msg,  # it contains the UDH + text chunk for multipart, or just text for single part
                 registered_delivery=True,
                 sequence=next_seq,  # Use our pre-generated sequence
             )
@@ -170,20 +194,47 @@ class Command(BaseCommand):
                 client.read_once()
             except:
                 pass
-
+            # 2. SUCCESS UPDATE (Record 'response_payload' and 'completed_at')
+            attempt_log.status = "SUBMITTED"
+            attempt_log.response_payload = {
+                "status": "accepted_by_gateway",
+                "sequence_number": next_seq,
+            }
+            attempt_log.completed_at = timezone.now()
+            attempt_log.save()
             part.submit_status = "SUBMITTED"
-            part.save(update_fields=["submit_status"])
+            part.submitted_at = timezone.now()
+            part.save(update_fields=["submit_status", "submitted_at"])
 
             if parent_msg.status == "queued":
                 parent_msg.status = "sent"
-                parent_msg.save()
+                parent_msg.submitted_at = timezone.now()
+                parent_msg.save(update_fields=["status", "submitted_at"])
 
             self.stdout.write(self.style.SUCCESS(f"Processed Msg #{parent_msg.id}"))
 
         except Exception as e:
-            self.stdout.write(self.style.ERROR(f"Error: {e}"))
+            now = timezone.now()
+            # 1. Update the specific Segment (Part)
             part.submit_status = "FAILED"
-            part.save()
+            part.failed_at = now  # <--- NEW: Track when it died
+            part.failure_reason = str(e)  # <--- NEW: Store why it died
+            part.save(update_fields=["submit_status", "failed_at", "failure_reason"])
+            # 2. Update the Parent Message
+            # If a submission fails at this stage, we mark the whole parent as failed
+            parent_msg = part.message
+            parent_msg.status = "failed"
+            parent_msg.failed_at = now
+            parent_msg.failure_reason = f"Submission Error: {str(e)}"
+            parent_msg.save(update_fields=["status", "failed_at", "failure_reason"])
+
+            # 3. Update the Attempt Log (Your existing code)
+            attempt_log.status = "FAILED"
+            attempt_log.error_message = str(e)
+            attempt_log.completed_at = timezone.now()
+            attempt_log.save()
+
+            self.stdout.write(self.style.ERROR(f"Error: {e}"))
 
     def handle_sent_confirmation(self, pdu):
         """When the vendor accepts the msg, they give us their Tracking ID"""
@@ -219,8 +270,27 @@ class Command(BaseCommand):
                 )
                 if part:
                     part.vendor_msg_id = vendor_id
-                    part.save(update_fields=["vendor_msg_id"])
-
+                    part.sent_at = timezone.now()
+                    part.save(update_fields=["vendor_msg_id", "sent_at"])
+                    parent = part.message
+                    if not parent.sent_at:
+                        parent.sent_at = timezone.now()
+                        parent.save(update_fields=["sent_at"])
+                    attempt = (
+                        MessageAttempt.objects.filter(segment=part)
+                        .order_by("-started_at")
+                        .first()
+                    )
+                    if attempt:
+                        attempt.provider_message_id = vendor_id
+                        attempt.response_payload = {
+                            "status": "accepted_by_gateway",
+                            "vendor_msg_id": vendor_id,
+                            "sequence_number": pdu.sequence,
+                        }
+                        attempt.save(
+                            update_fields=["provider_message_id", "response_payload"]
+                        )
                     # 2. UPDATE THE DETAILED REPORT (Master Record)
                     DetailedSMSReport.objects.filter(message=part.message).update(
                         vendor_msg_id=vendor_id  # Sync vendor ID to report for easy searching
@@ -239,6 +309,7 @@ class Command(BaseCommand):
         except Exception as e:
             print(f"--- DEBUG: Error inside handle_sent_confirmation: {e} ---")
 
+    # it talks to the telecom vendor
     def handle_incoming(self, pdu, config):
         try:
             content = pdu.short_message.decode("utf-8", errors="ignore")
@@ -246,7 +317,10 @@ class Command(BaseCommand):
             match_id = re.search(r"id:([A-F0-9a-z]+)", content, re.IGNORECASE)
             # Catch REJECTD, DELIVRD, etc.
             match_stat = re.search(r"stat:([A-Z]+)", content, re.IGNORECASE)
-
+            # --- ADD THIS NEW REGEX ---
+            # Grabs the 3-digit error code standard in SMPP DLRs
+            match_err = re.search(r"err:([0-9a-zA-Z]+)", content, re.IGNORECASE)
+            extracted_err_code = match_err.group(1) if match_err else ""
             if match_id and match_stat:
                 v_id = match_id.group(1)
                 v_stat = match_stat.group(1)
@@ -260,9 +334,50 @@ class Command(BaseCommand):
                 new_status = status_map.get(v_stat, "SUBMITTED")
 
                 # Update using the Vendor ID
-                SMSMessagePart.objects.filter(vendor_msg_id=v_id).update(
-                    submit_status=new_status
+                # part=SMSMessagePart.objects.filter(vendor_msg_id=v_id).update(
+                #     submit_status=new_status
+                # )
+                part = (
+                    SMSMessagePart.objects.filter(vendor_msg_id=v_id)
+                    .select_related("message")
+                    .first()
                 )
+                if part:
+                    part.submit_status = new_status
+                    # Timestamp based on the DLR status
+                    now = timezone.now()
+                    if new_status == "DELIVERED":
+                        part.delivered_at = now
+                        part.save(
+                            update_fields=[
+                                "submit_status",
+                                "delivered_at",
+                            ]
+                        )
+                    elif new_status == "FAILED":
+                        part.failed_at = now
+                        part.failure_reason = content  # Store raw DLR string as reaso
+                        part.save(
+                            update_fields=[
+                                "submit_status",
+                                "failed_at",
+                                "failure_reason",
+                            ]
+                        )
+                    # 2. CREATE THE DLR EVENT LOG (The Boss's Requirement)
+                    DLREvent.objects.create(
+                        message=part.message,
+                        segment=part,
+                        provider_message_id=v_id,
+                        event_type=new_status,
+                        segment_number=part.part_no,
+                        raw_payload={
+                            "raw_smpp_string": content
+                        },  # Saving exactly what the vendor sent
+                        status_code=extracted_err_code,
+                    )
+                    # 3. CHECK THE PARENT MESSAGE STATUS
+                    self.update_parent_message_status(part.message)
                 print(
                     f"--- Updated Part with Vendor ID {v_id} to status {new_status} ---"
                 )
@@ -283,3 +398,48 @@ class Command(BaseCommand):
                 )
         except Exception as e:
             logger.error(f"DLR Error: {e}")
+
+    def update_parent_message_status(self, parent_msg):
+        """Calculates the overall status of a message based on its parts."""
+
+        # Get all parts for this parent message
+        all_parts = SMSMessagePart.objects.filter(message=parent_msg)
+        total_parts = all_parts.count()
+
+        delivered_count = all_parts.filter(submit_status="DELIVERED").count()
+        failed_count = all_parts.filter(submit_status="FAILED").count()
+
+        new_parent_status = parent_msg.status
+
+        if delivered_count == total_parts:
+            new_parent_status = "delivered"
+        elif failed_count == total_parts:
+            new_parent_status = "failed"
+        elif delivered_count > 0 and (delivered_count + failed_count == total_parts):
+            # Some delivered, some failed, and no more are pending
+            new_parent_status = "partially_delivered"
+
+        # Only hit the database if the status actually changed
+        if new_parent_status != parent_msg.status:
+            parent_msg.status = new_parent_status
+            now = timezone.now()
+            if new_parent_status == "delivered":
+                parent_msg.delivered_at = now
+            elif new_parent_status == "failed":
+                parent_msg.failed_at = now
+                parent_msg.failure_reason = "All segments failed to deliver."
+            elif new_parent_status == "partially_delivered":
+                # For partial, we still set delivered_at because SOME of it
+                # reached the user, but we add a note to the failure reason.
+                parent_msg.delivered_at = now
+                parent_msg.failure_reason = (
+                    "Some segments failed, but some were delivered."
+                )
+            parent_msg.save(
+                update_fields=["status", "delivered_at", "failed_at", "failure_reason"]
+            )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Parent Msg #{parent_msg.id} is now {new_parent_status}"
+                )
+            )

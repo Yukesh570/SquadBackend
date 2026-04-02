@@ -6,6 +6,7 @@ import struct
 import logging
 from django.core.management.base import BaseCommand
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 from squadServices.helper.checkNumber import clean_phone_number
 from squadServices.helper.routeAndCostHelper import get_route_and_cost
 from squadServices.helper.smsSplitter import create_message_parts
@@ -26,6 +27,7 @@ from squadServices.models.transaction.transaction import (
     TransactionType,
     VendorTransaction,
 )
+import uuid
 
 # from squadServices.models.transaction import transaction
 
@@ -40,7 +42,7 @@ CMD_BIND_TRANSMITTER = 0x00000002
 CMD_BIND_TRANSCEIVER = 0x00000009
 CMD_SUBMIT_SM = 0x00000004
 CMD_ENQUIRE_LINK = 0x00000015
-
+CMD_DELIVER_SM = 0x00000005
 # Response IDs (Request ID + 0x80000000)
 CMD_BIND_RECEIVER_RESP = 0x80000001
 CMD_BIND_TRANSMITTER_RESP = 0x80000002
@@ -58,45 +60,42 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     help = "Runs a lightweight SMPP Server to receive SMS"
 
-    @sync_to_async
-    def update_sms_status(self, msg_id, status):
-        # 1. Standardize the incoming status string
-        # Clean the status: uppercase and remove extra spaces
-        clean_status = status.strip().upper()
+    # def update_sms_status(self, msg_id, status):
+    #     # 1. Standardize the incoming status string
+    #     # Clean the status: uppercase and remove extra spaces
+    #     clean_status = status.strip().upper()
 
-        # 2. Map carrier status to YOUR internal model choices
-        # (queued, sent, failed, delivered)
-        status_map = {
-            "DELIVRD": "delivered",
-            "UNDELIV": "failed",
-            "EXPIRED": "failed",
-            "REJECTD": "failed",
-            "DELETED": "failed",
-            "ACCEPTD": "sent",
-            "UNKNOWN": "sent",
-        }
+    #     # 2. Map carrier status to YOUR internal model choices
+    #     # (queued, sent, failed, delivered)
+    #     status_map = {
+    #         "DELIVRD": "delivered",
+    #         "UNDELIV": "failed",
+    #         "EXPIRED": "failed",
+    #         "REJECTD": "failed",
+    #         "DELETED": "failed",
+    #         "ACCEPTD": "sent",
+    #         "UNKNOWN": "sent",
+    #     }
 
-        # Default to "sent" if the carrier returns something we don't recognize
-        mapped_status = status_map.get(clean_status, "sent")
+    #     # Default to "sent" if the carrier returns something we don't recognize
+    #     mapped_status = status_map.get(clean_status, "sent")
 
-        # 3. Update the database using the unique message_id
-        # We use .update() because it is efficient and doesn't trigger extra signals
-        updated_rows = SMSMessage.objects.filter(message_id=msg_id).update(
-            status=mapped_status
-        )
+    #     # 3. Update the database using the unique message_id
+    #     # We use .update() because it is efficient and doesn't trigger extra signals
+    #     updated_rows = SMSMessage.objects.filter(message_id=msg_id).update(
+    #         status=mapped_status
+    #     )
 
-        if updated_rows > 0:
+    #     if updated_rows > 0:
 
-            logger.info(f"DLR Update Success: Message {msg_id} is now {mapped_status}")
-        else:
-            logger.warning(
-                f"DLR Update Orphaned: Received DLR for ID {msg_id}, but not found in DB."
-            )
+    #         logger.info(f"DLR Update Success: Message {msg_id} is now {mapped_status}")
+    #     else:
+    #         logger.warning(
+    #             f"DLR Update Orphaned: Received DLR for ID {msg_id}, but not found in DB."
+    #         )
 
-    def generate_message_id(self):
-        # Returns a unique 8-character hex string, e.g., 'a1b2c3d4'
-        # Or use str(uuid.uuid4())[:8]
-        return secrets.token_hex(4).upper()
+    async def generate_message_id(self):  # If it has 'async'
+        return str(uuid.uuid4())
 
     def detect_encoding(self, text):
         """Detect if text is GSM-7 compatible or requires UCS-2"""
@@ -193,6 +192,9 @@ class Command(BaseCommand):
         except KeyboardInterrupt:
             self.stdout.write("Server stopped.")
 
+    # Once the server is running, it just waits.
+    # The moment an external client (like another SMPP server or SMS gateway) connects to your port
+
     async def run_server(self):
         server = await asyncio.start_server(self.handle_client, HOST, PORT)
         async with server:
@@ -219,11 +221,16 @@ class Command(BaseCommand):
                 body_data = await reader.read(body_len) if body_len > 0 else b""
 
                 # 3. Handle BIND Commands
+
+                # Before a client can send or receive any messages, they must authenticate (log in) with your server
                 if cmd_id in [
-                    CMD_BIND_RECEIVER,
-                    CMD_BIND_TRANSMITTER,
-                    CMD_BIND_TRANSCEIVER,
+                    CMD_BIND_RECEIVER,  # I am logging in strictly to listen for incoming messages and delivery receipts from you.
+                    CMD_BIND_TRANSMITTER,  # The client is saying, "I am logging in strictly to send messages to you."
+                    CMD_BIND_TRANSCEIVER,  # I want to do both
                 ]:
+
+                    # AUTHORIZATION COMES FIRST - We don't even care about the route until we know who they are!
+
                     system_id, offset = self.read_c_string(body_data, 0)
                     password, offset = self.read_c_string(body_data, offset)
                     print(f"Auth attempt: {system_id} from {client_ip}")
@@ -256,7 +263,11 @@ class Command(BaseCommand):
 
                         resp_body = system_id.encode("ascii") + b"\0"
                         await self.send_pdu(
-                            writer, cmd_id | 0x80000000, ESME_ROK, seq_num, resp_body
+                            writer,
+                            cmd_id | 0x80000000,
+                            ESME_ROK,
+                            seq_num,
+                            resp_body,  # ESME_ROK means Successful authentication0
                         )
                         logger.info(f"Auth Success: {system_id}")
                     else:
@@ -267,12 +278,19 @@ class Command(BaseCommand):
                         )
                         writer.close()
                         return
-                elif cmd_id == CMD_SUBMIT_SM:
+                elif (  # (Sending a Message)Here is a text message. Please route it and send it to this specific phone number.
+                    cmd_id == CMD_SUBMIT_SM
+                ):
                     # --- THE GUARD ---
                     if not getattr(writer, "is_authenticated", False):
                         logger.warning("Unauthenticated SUBMIT_SM attempt blocked.")
                         await self.send_pdu(
-                            writer, CMD_SUBMIT_SM_RESP, 0x00000004, seq_num, b""
+                            # CMD_SUBMIT_SM_RESP sends back the response to the client that sent the SUBMIT_SM command. We use it here to tell the client that their attempt was rejected due to lack of authentication.
+                            writer,
+                            CMD_SUBMIT_SM_RESP,
+                            0x00000004,
+                            seq_num,
+                            b"",
                         )
                         continue  # Changed from 'return' to 'continue' to keep connection open!
                     # -----------------
@@ -282,42 +300,38 @@ class Command(BaseCommand):
                         body_data, seq_num, writer
                     )
 
-                    # --- THE MISSING REJECTION LOGIC ---
-                    if not msg_id_to_return:
-                        logger.warning("Rejecting PDU: Invalid Destination Address")
-                        continue
-                    # -----------------------------------
+                    # # --- THE MISSING REJECTION LOGIC ---
+                    # if not msg_id_to_return:
+                    #     logger.warning("Rejecting PDU: Invalid Destination Address")
+                    #     continue
+                    # # -----------------------------------
 
-                    # Handle the SMS only if valid
-                    resp_body = msg_id_to_return.encode("ascii") + b"\0"
-                    await self.send_pdu(
-                        writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
-                    )
-                elif cmd_id == CMD_ENQUIRE_LINK:
+                elif (
+                    cmd_id == CMD_ENQUIRE_LINK
+                ):  # TCP connections can drop if they sit idle for too long. ENQUIRE_LINK is a "ping" or "keep-alive" heartbeat.
                     # Keep-alive
                     await self.send_pdu(
                         writer, CMD_ENQUIRE_LINK_RESP, ESME_ROK, seq_num, b""
                     )
-                elif cmd_id == 0x00000005:  # CMD_DELIVER_SM (This is a DLR)
-                    # 1. Parse the DLR text from body_data
-                    # (Standard DLR text looks like: "id:A1B2C3D4 stat:DELIVRD ...")
-                    dlr_text = body_data.decode("utf-8", errors="ignore")
+                # i commented Because your script is acting as the SMPP Server, it should never accept a Delivery Receipt from a client. If they send one, it will now fall into the else: block and your server will correctly reject it with a Generic NACK error.
+                # he DELIVER_SM command only flows in one direction: From the Server to the Client.
+                # elif (  # it talks to Your customers client (e.g., Acme Corp).
+                #     cmd_id == CMD_DELIVER_SM
+                # ):  # (Incoming Messages & Receipts) (This is a DLR)
 
-                    # 2. Extract the ID and Status
-                    # Simple helper to find "id:XXXXX"
-                    import re
+                #     dlr_text = body_data.decode("utf-8", errors="ignore")
 
-                    match_id = re.search(r"id:([A-F0-9]+)", dlr_text)
-                    match_stat = re.search(r"stat:([A-Z]+)", dlr_text)
+                #     match_id = re.search(r"id:([A-F0-9]+)", dlr_text)
+                #     match_stat = re.search(r"stat:([A-Z]+)", dlr_text)
 
-                    if match_id and match_stat:
-                        target_id = match_id.group(1)
-                        new_status = match_stat.group(1)
+                #     if match_id and match_stat:
+                #         target_id = match_id.group(1)
+                #         new_status = match_stat.group(1)
 
-                        # 3. Update your database
-                        await self.update_sms_status(target_id, new_status)
+                #         # 3. Update your database
+                #         await self.update_sms_status(target_id, new_status)
 
-                    # 4. Respond to the carrier that you received the DLR
+                #     # 4. Respond to the carrier that you received the DLR
 
                 else:
                     # Unknown command, send Generic NACK
@@ -488,11 +502,15 @@ class Command(BaseCommand):
         dest_addr_npi = body[offset]
         offset += 1
         raw_destination_addr, offset = self.read_c_string(body, offset)
+        # It cleans the phone number and detects the encoding (GSM-7).
         validated_number = clean_phone_number(raw_destination_addr)
+
+        # response for bad phone numbers
         if not validated_number:
             logger.warning(
                 f"Invalid destination number rejected: {raw_destination_addr}"
             )
+            await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x0000000B, seq_num, b"")
             # You should probably reject the SMPP message here!
             return None
         destination_addr = validated_number.replace("+", "")
@@ -526,16 +544,22 @@ class Command(BaseCommand):
         route_data, routing_error = await self.get_route_and_potential_cost(
             client_obj, destination_addr, total_segments
         )
+        concat_ref = None
+        if total_segments > 1:
+            # Generate a random 1-byte reference (0-255)
+            concat_ref = secrets.randbelow(256)
+        # response for routing/billing failures
         if routing_error:
             logger.warning(
                 f"Routing/Billing Failed for {destination_addr}: {routing_error}"
             )
+            await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
             return None  # This will trigger the 0x0000000B rejection in handle_client!
         vendor = route_data["vendor"]
         smpp = route_data["smpp"]
         # Extract SMS Text
-
-        unique_msg_id = self.generate_message_id()
+        # Generate 36 bit unique message ID
+        unique_msg_id = await self.generate_message_id()  # Add 'await'
         logger.info(
             f"Received SMS from {source_addr} to {destination_addr}: {short_message}"
         )
@@ -555,6 +579,7 @@ class Command(BaseCommand):
                 client_obj,  # client data
                 vendor,
                 unique_msg_id,
+                concat_ref=concat_ref,
             )
             await self.perform_actual_deduction(
                 client_obj, route_data, total_segments, saved_msg
@@ -582,6 +607,7 @@ class Command(BaseCommand):
         client=None,
         vendor=None,
         unique_msg_id=None,
+        concat_ref=None,  # <--- NEW: Pass the reference number here
     ):
         """
         Django ORM is synchronous, so we wrap it in sync_to_async
@@ -598,6 +624,9 @@ class Command(BaseCommand):
             client=client,
             vendor=vendor,
             message_id=unique_msg_id,
+            concatenated_reference=concat_ref,
+            queued_at=timezone.now(),
+            external_id=uuid.uuid4(),
         )
         create_message_parts(parent_msg, text)
         return parent_msg

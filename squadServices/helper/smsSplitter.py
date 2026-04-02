@@ -2,6 +2,7 @@ import random
 import struct
 
 from squadServices.models.smpp.smppSMS import SMSMessagePart
+from django.utils import timezone
 
 
 def create_message_parts(sms_message_obj, text):
@@ -24,7 +25,7 @@ def create_message_parts(sms_message_obj, text):
         max_multi = 153  # Max bytes per chunk when splitting GSM/Latin1
 
     parts_created = []
-
+    now = timezone.now()
     # 2. Handle Short Messages (No splitting needed)
     if len(text_bytes) <= max_single:
         part = SMSMessagePart.objects.create(
@@ -33,15 +34,19 @@ def create_message_parts(sms_message_obj, text):
             part_no=1,
             part_total=1,
             udh_ref=0,
+            udh_hex=None,
             esm_class=0x00,  # 0x00 = Standard SMS, no header
             short_message=text_bytes,
+            submit_status="QUEUED",
+            created_at=now,
+            updated_at=now,
         )
         parts_created.append(part)
         return parts_created
 
     # 3. Handle Long Messages (Amir's UDH Magic)
     # Generate a random 8-bit reference number (1-255) to link the parts
-    udh_ref = random.randint(1, 255)
+    udh_ref = sms_message_obj.concatenated_reference or random.randint(1, 255)
 
     # Slice the byte array into chunks
     chunks = [
@@ -55,7 +60,7 @@ def create_message_parts(sms_message_obj, text):
         # Pack the 6-byte UDH: 05 00 03 <ref> <total> <seq>
         # '!BBBBBB' tells Python to pack 6 unsigned bytes strictly
         udh = struct.pack("!BBBBBB", 0x05, 0x00, 0x03, udh_ref, total_parts, part_no)
-
+        generated_udh_hex = udh.hex().upper()
         # Combine the header + the text chunk
         full_payload = udh + chunk
         decoded_chunk_text = chunk.decode(encoding_used, errors="ignore")
@@ -65,8 +70,12 @@ def create_message_parts(sms_message_obj, text):
             part_no=part_no,
             part_total=total_parts,
             udh_ref=udh_ref,
+            udh_hex=generated_udh_hex,
             esm_class=0x40,  # 0x40 = UDHI flag (Tells vendor to read the header!)
             short_message=full_payload,
+            submit_status="QUEUED",
+            created_at=now,
+            updated_at=now,
         )
         parts_created.append(part)
 

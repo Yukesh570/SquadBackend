@@ -20,7 +20,13 @@ from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.routeManager.customRoute import CustomRoute
-from squadServices.models.smpp.smppSMS import SMSMessage, SMSMessagePart
+from squadServices.models.smpp.smppSMS import (
+    DLREvent,
+    MessageAttempt,
+    MessageAuditLog,
+    SMSMessage,
+    SMSMessagePart,
+)
 from squadServices.models.transaction.transaction import (
     ClientTransaction,
     VendorTransaction,
@@ -478,35 +484,100 @@ class CustomRouteAdmin(admin.ModelAdmin):
     readonly_fields = ("createdAt", "updatedAt")
 
 
+@admin.register(SMSMessage)
 class SMSMessageAdmin(admin.ModelAdmin):
-    model = SMSMessage
     list_display = (
         "id",
-        "text",
+        "destination",
         "status",
-        "encoding",
-        "segmentNumber",
-        "characterCount",
+        "segmentNumber",  # Kept as your original CharField
+        "characterCount",  # Kept as your original CharField
+        "concatenated_reference",  # The new puzzle ID
         "isDeleted",
+        "queued_at",
+    )
+    search_fields = ("text", "destination", "status", "external_id")
+    list_filter = ("status", "isDeleted")
+
+    readonly_fields = (
+        "external_id",
         "createdAt",
         "updatedAt",
+        "queued_at",
+        "submitted_at",
+        "sent_at",
+        "delivered_at",
+        "failed_at",
     )
-    search_fields = ("text", "status")
-    readonly_fields = ("createdAt", "updatedAt")
 
 
+@admin.register(SMSMessagePart)
 class SMSMessagePartAdmin(admin.ModelAdmin):
-    model = SMSMessagePart
     list_display = (
         "id",
         "message",
         "part_no",
         "part_total",
         "udh_ref",
-        "esm_class",
+        "submit_status",  # Shows if this specific piece failed or delivered
+        "vendor_msg_id",  # The telecom's tracking ID
         "last_submit_at",
     )
-    search_fields = ("message__text",)
+    search_fields = ("message__text", "vendor_msg_id", "message__destination")
+    list_filter = ("submit_status",)
+
+    # BinaryFields (short_message) MUST be readonly in Django Admin or it will crash.
+    # We also lock down the automated timestamps.
+    readonly_fields = (
+        "short_message",
+        "last_submit_at",
+        "created_at",
+        "updated_at",
+        "submitted_at",
+        "sent_at",
+        "delivered_at",
+        "failed_at",
+    )
+
+
+@admin.register(MessageAttempt)
+class MessageAttemptAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "message",
+        "segment",
+        "attempt_number",
+        "provider",
+        "status",
+        "started_at",
+    )
+    search_fields = ("provider_message_id", "message__destination")
+    list_filter = ("status", "provider")
+
+    # Lock down the timestamps and JSON payloads
+    readonly_fields = (
+        "started_at",
+        "completed_at",
+        "request_payload",
+        "response_payload",
+    )
+
+
+@admin.register(DLREvent)
+class DLREventAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "message",
+        "provider_message_id",
+        "event_type",
+        "segment_number",
+        "received_at",
+    )
+    search_fields = ("provider_message_id", "message__destination")
+    list_filter = ("event_type",)
+
+    # DLRs are append-only logs, so the timestamp and payload should be strictly read-only
+    readonly_fields = ("received_at", "raw_payload")
 
 
 class IpWhiteListAdmin(admin.ModelAdmin):
@@ -956,6 +1027,60 @@ class VendorInvoiceAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
 
+@admin.register(MessageAuditLog)
+class MessageAuditLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "get_message_info",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "changed_at",
+    )
+
+    # Excellent for finding bottlenecks (e.g., filtering by 'changed_by' to see what the DLR worker did today)
+    list_filter = ("to_status", "from_status", "changed_by", "changed_at")
+
+    # Double-underscores let you search the audit log using the actual phone number or Vendor ID
+    search_fields = (
+        "message__message_id",
+        "message__destination",
+        "segment__vendor_msg_id",
+        "changed_by",
+        "reason",
+    )
+
+    # 1. Make all fields read-only so history cannot be rewritten
+    readonly_fields = (
+        "message",
+        "segment",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "reason",
+        "changed_at",
+    )
+
+    # Sort newest first
+    ordering = ("-changed_at",)
+
+    # Helper function to make the list view cleaner and more informative
+    def get_message_info(self, obj):
+        if obj.message:
+            return f"Msg {obj.message.id} ({obj.message.destination})"
+        return "Unknown"
+
+    get_message_info.short_description = "Parent Message"
+
+    # # 2. SECURITY: Prevent admins from manually creating fake logs
+    # def has_add_permission(self, request):
+    #     return False
+
+    # # 3. SECURITY: Prevent admins from deleting evidence/history
+    # def has_delete_permission(self, request, obj=None):
+    #     return False
+
+
 admin.site.register(CustomRoute, CustomRouteAdmin)
 admin.site.register(IpWhitelist, IpWhiteListAdmin)
 admin.site.register(User, CustomUserAdmin)
@@ -983,8 +1108,6 @@ admin.site.register(Network, NetworkAdmin)
 admin.site.register(MappingSetup, MappingSetupAdmin)
 admin.site.register(Operators, OperatorsAdmin)
 admin.site.register(UserLoginHistory, UserLoginHistoryAdmin)
-admin.site.register(SMSMessage, SMSMessageAdmin)
-admin.site.register(SMSMessagePart, SMSMessagePartAdmin)
 admin.site.register(Notification, NotificationAdmin)
 admin.site.register(UserLog, UserLogAdmin)
 admin.site.register(ClientTransaction, ClientTransactionAdmin)
