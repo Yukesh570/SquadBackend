@@ -127,6 +127,11 @@ class SMSMessagePart(models.Model):
         max_length=20, choices=STATUS_CHOICES, default="QUEUED"
     )
     vendor_msg_id = models.CharField(max_length=100, null=True, blank=True)
+
+    # 0: ESME_ROK (Success. The vendor accepted the message into their system.)
+    # 11: ESME_RINVDSTADR (Immediate failure: The destination phone number is completely invalid or missing digits.)
+    # 20: ESME_RMSGQFUL (Immediate failure: The vendor's message queue is full and they cannot accept more messages right now.)
+    # 88: ESME_RTHROTTLED (Immediate failure: You are sending messages faster than your allowed TPS / Transactions Per Second. You are being throttled.)
     vendor_submit_status = models.IntegerField(null=True, blank=True)
 
     submit_attempts = models.IntegerField(default=0)

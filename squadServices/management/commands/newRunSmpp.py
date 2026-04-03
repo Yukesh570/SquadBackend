@@ -223,9 +223,12 @@ class Command(BaseCommand):
             }
             attempt_log.completed_at = timezone.now()
             attempt_log.save()
+            part.vendor_submit_status = 0
             part.submit_status = "SUBMITTED"
             part.submitted_at = timezone.now()
-            part.save(update_fields=["submit_status", "submitted_at"])
+            part.save(
+                update_fields=["vendor_submit_status", "submit_status", "submitted_at"]
+            )
 
             if parent_msg.status == "queued":
                 parent_msg.status = "sent"
@@ -233,7 +236,47 @@ class Command(BaseCommand):
                 parent_msg.save(update_fields=["status", "submitted_at"])
 
             self.stdout.write(self.style.SUCCESS(f"Processed Msg #{parent_msg.id}"))
+        # ---> 1. CATCH IMMEDIATE VENDOR REJECTIONS (The Bouncer) <---
+        except smpplib.exceptions.PDUError as pdu_err:
+            now = timezone.now()
 
+            # 1. Update Part with the exact integer status
+            part.vendor_submit_status = pdu_err.status
+            part.submit_status = "FAILED"
+            part.failed_at = now
+            part.failure_reason = (
+                f"Rejected at submission. SMPP Error Code: {pdu_err.status}"
+            )
+            part.save(
+                update_fields=[
+                    "vendor_submit_status",
+                    "submit_status",
+                    "failed_at",
+                    "failure_reason",
+                ]
+            )
+
+            # 2. Update Parent Message
+            parent_msg = part.message
+            parent_msg.status = "failed"
+            parent_msg.failed_at = now
+            parent_msg.failure_reason = (
+                f"Vendor Submission Error: SMPP Code {pdu_err.status}"
+            )
+            parent_msg.save(update_fields=["status", "failed_at", "failure_reason"])
+
+            # 3. Update Attempt Log
+            attempt_log.status = "FAILED"
+            attempt_log.error_message = f"SMPP PDU Error: {pdu_err.status}"
+            attempt_log.completed_at = now
+            attempt_log.save()
+
+            self.stdout.write(
+                self.style.ERROR(
+                    f"Vendor Rejected Msg #{parent_msg.id}: Code {pdu_err.status}"
+                )
+            )
+        # ---> 2. CATCH EVERYTHING ELSE (Network drops, timeouts, crashes) <---
         except Exception as e:
             now = timezone.now()
             # 1. Update the specific Segment (Part)
@@ -342,10 +385,15 @@ class Command(BaseCommand):
                 "013": "Blocked by Carrier Spam Filter.",
                 "014": "Sender ID blocked or unregistered.",
             }
+            # When the vendor sends the Delivery Receipt (DLR), it arrives as raw computer bytes (zeros and ones).
+            # This line converts those bytes into a readable Python string.
             content = pdu.short_message.decode("utf-8", errors="ignore")
             # Improved Regex to catch IDs like 7c6b98...
+
+            # Think of Regex like using CTRL+F in a document, but supercharged.
+            # It scans id in the DLR text and grabs the exact string of letters and numbers that come after "id:" and before the next space.
             match_id = re.search(r"id:([A-F0-9a-z]+)", content, re.IGNORECASE)
-            # Catch REJECTD, DELIVRD, etc.
+            # Catch REJECTD, DELIVRD.it scans the DLR text and grabs the exact status word that comes after "stat:" and before the next space.
             match_stat = re.search(r"stat:([A-Z]+)", content, re.IGNORECASE)
             # --- ADD THIS NEW REGEX ---
             # Grabs the 3-digit error code standard in SMPP DLRs
