@@ -145,11 +145,18 @@ class SMSMessagePart(models.Model):
     class Meta:
         # Ensures you don't accidentally create duplicate segment numbers for the same parent message
         unique_together = ("message", "part_no")
+        ordering = ["-created_at"]
 
 
 class MessageAttempt(models.Model):
     """Tracks every time your server tries to send a segment to the vendor."""
 
+    ATTEMPT_STATUS_CHOICES = (
+        ("ATTEMPTING", "Attempting"),
+        ("SUBMITTED", "Submitted"),
+        ("FAILED", "Failed"),
+        ("DELIVERED", "Delivered"),
+    )
     message = models.ForeignKey("SMSMessage", on_delete=models.CASCADE)
     segment = models.ForeignKey(
         "SMSMessagePart", on_delete=models.CASCADE, null=True, blank=True
@@ -159,33 +166,58 @@ class MessageAttempt(models.Model):
         max_length=50, null=True, blank=True
     )  # e.g., 'RouteMobile'
     provider_message_id = models.CharField(max_length=255, null=True, blank=True)
-    status = models.CharField(max_length=20)  # e.g., 'SUBMITTED', 'FAILED'
+    status = models.CharField(max_length=20, choices=ATTEMPT_STATUS_CHOICES)
     request_payload = JSONField(null=True, blank=True)
     response_payload = JSONField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
     started_at = models.DateTimeField(default=timezone.now)
     completed_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        ordering = ["-started_at"]
+
 
 class DLREvent(models.Model):
     """An append-only log of every receipt the vendor sends back to you."""
 
+    EVENT_TYPE_CHOICES = (
+        ("SUBMITTED", "Submitted"),
+        ("DELIVERED", "Delivered"),
+        ("FAILED", "Failed"),
+        ("REJECTED", "Rejected"),
+        ("EXPIRED", "Expired"),
+        ("UNDELIVERABLE", "Undeliverable"),
+    )
     message = models.ForeignKey("SMSMessage", on_delete=models.CASCADE)
     segment = models.ForeignKey(
         "SMSMessagePart", on_delete=models.CASCADE, null=True, blank=True
     )
     provider_message_id = models.CharField(max_length=255, null=True, blank=True)
-    event_type = models.CharField(max_length=30)  # e.g., 'DELIVERED', 'FAILED'
+    event_type = models.CharField(max_length=30, choices=EVENT_TYPE_CHOICES)
     segment_number = models.IntegerField(null=True, blank=True)
     status_code = models.CharField(max_length=10, null=True, blank=True)
     status_description = models.TextField(null=True, blank=True)
     raw_payload = JSONField(null=True, blank=True)
     received_at = models.DateTimeField(default=timezone.now)
 
+    class Meta:
+        ordering = ["-received_at"]
+
 
 class MessageAuditLog(models.Model):
     """Tracks every state change of a message or segment for debugging and billing disputes."""
 
+    AUDIT_STATUS_CHOICES = (
+        ("queued", "Queued"),
+        ("sent", "Sent"),
+        ("delivered", "Delivered"),
+        ("failed", "Failed"),
+        ("partially_delivered", "Partially Delivered"),
+        ("QUEUED", "Part Queued"),
+        ("SUBMITTED", "Part Submitted"),
+        ("DELIVERED", "Part Delivered"),
+        ("FAILED", "Part Failed"),
+    )
     # Django handles the ID automatically as a BigAutoField
     message = models.ForeignKey(
         "SMSMessage", on_delete=models.CASCADE, related_name="audit_logs"
@@ -198,8 +230,10 @@ class MessageAuditLog(models.Model):
         related_name="audit_logs",
     )
 
-    from_status = models.CharField(max_length=20, null=True, blank=True)
-    to_status = models.CharField(max_length=20)
+    from_status = models.CharField(
+        max_length=20, choices=AUDIT_STATUS_CHOICES, null=True, blank=True
+    )
+    to_status = models.CharField(max_length=20, choices=AUDIT_STATUS_CHOICES)
 
     # You can link this to your User model, or keep it as a string (e.g., 'system', 'vendor_dlr', 'admin_sweta')
     changed_by = models.CharField(max_length=100, default="system")

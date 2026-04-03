@@ -52,8 +52,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 ]
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Your API Title",
-    "DESCRIPTION": "Your API description",
+    "TITLE": "Squad API",
+    "DESCRIPTION": "API documentation for the Squad application",
     "VERSION": "1.0.0",
 }
 

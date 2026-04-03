@@ -67,7 +67,12 @@ from squadServices.controller.rateManagementController.customerRateController im
 from squadServices.controller.routeManagerController.customRouteController import (
     CustomRouteViewSet,
 )
-from squadServices.controller.smppSMSController.smppSMSController import SmppSMSViewSet
+from squadServices.controller.smppSMSController.smppSMSController import (
+    DLREventViewSet,
+    MessageAttemptViewSet,
+    SMSMessagePartViewSet,
+    SmppSMSViewSet,
+)
 from squadServices.controller.transaction.transactionController import (
     ClientTransactionViewSet,
     VendorTransactionViewSet,
@@ -655,6 +660,30 @@ urlpatterns = [
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "smsMessagePart/<str:module>/",
+        SMSMessagePartViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+    ),
+    path(
+        "messageAttempt/<str:module>/",
+        MessageAttemptViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+    ),
+    path(
+        "dlrEvent/<str:module>/",
+        DLREventViewSet.as_view(
+            {
+                "get": "list",
             }
         ),
     ),

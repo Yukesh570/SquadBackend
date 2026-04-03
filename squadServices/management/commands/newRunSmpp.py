@@ -59,9 +59,16 @@ class Command(BaseCommand):
                         continue
 
                     smpp_id = parent_msg.smpp.id
-
+                    # Instead of opening a brand new connection for every single text message
+                    # (which would be incredibly slow and get you blocked by the vendor),
+                    # this code uses a "Connection Pool" and a "Cooldown Timer."
                     # Connection Management
+
+                    # Think of self.sessions as a dictionary of active phone calls.
+                    # If you already have an open line to "RouteMobile" (smpp_id = 1),
+                    # it skips this entire block and reuses the open line.
                     if smpp_id not in self.sessions:
+                        # If you aren't connected, it checks exactly what time you last tried to connect.
                         last_attempt = getattr(self, f"last_attempt_{smpp_id}", 0)
                         if time.time() - last_attempt < 10:
                             continue
@@ -73,6 +80,8 @@ class Command(BaseCommand):
                         client = self.connect_to_gateway(parent_msg.smpp)
 
                         if client:
+                            # If the connection succeeds, it saves the active connection object into the dictionary
+                            # so the next message in the queue can use it instantly.
                             self.sessions[smpp_id] = client
                         else:
                             continue
@@ -105,18 +114,30 @@ class Command(BaseCommand):
     # This method establishes a connection to the SMPP gateway and binds as per the configuration
     def connect_to_gateway(self, config):
         try:
+            # This opens the raw TCP socket to the vendor's IP address and Port (like dialing a phone number).
             client = smpplib.client.Client(config.smppHost, config.smppPort, timeout=1)
 
             # Register Handlers
+            # If the vendor ever randomly sends us a Delivery Receipt, instantly pass it to my handle_incoming function.
+
+            # this run only after the bind is completed
             client.set_message_received_handler(
                 lambda pdu: self.handle_incoming(pdu, config)
             )
+            # When the vendor replies 'Yes, I accept this message', pass that response to my handle_sent_confirmation function.
+            # this run only after the bind is completed
+
             client.set_message_sent_handler(
                 lambda pdu: self.handle_sent_confirmation(pdu)
             )
-
+            # The Network Connection (Ringing the Phone)
+            # This line has nothing to do with SMS yet.
+            # This simply tells your server to open a raw TCP/IP network socket to the vendor's IP address and Port.
+            # This is you dialing the phone number and hearing the line connect on the other end.
+            # You are connected, but no one knows who you are yet.
             client.connect()
             mode = config.bindMode.upper()
+            # Once the network line is open, you have to speak the SMPP language to log in. This is called a "Bind".
             if mode == "TRANSMITTER":
                 client.bind_transmitter(
                     system_id=config.systemID, password=config.password
@@ -312,6 +333,15 @@ class Command(BaseCommand):
     # it talks to the telecom vendor
     def handle_incoming(self, pdu, config):
         try:
+            ERROR_DESCRIPTIONS = {
+                "000": "Delivered successfully.",
+                "001": "Subscriber Unavailable (Phone off or out of range).",
+                "005": "Unknown Subscriber (Invalid or disconnected number).",
+                "006": "Handset memory full.",
+                "011": "Carrier SMSC queue full.",
+                "013": "Blocked by Carrier Spam Filter.",
+                "014": "Sender ID blocked or unregistered.",
+            }
             content = pdu.short_message.decode("utf-8", errors="ignore")
             # Improved Regex to catch IDs like 7c6b98...
             match_id = re.search(r"id:([A-F0-9a-z]+)", content, re.IGNORECASE)
@@ -321,6 +351,9 @@ class Command(BaseCommand):
             # Grabs the 3-digit error code standard in SMPP DLRs
             match_err = re.search(r"err:([0-9a-zA-Z]+)", content, re.IGNORECASE)
             extracted_err_code = match_err.group(1) if match_err else ""
+            human_description = ERROR_DESCRIPTIONS.get(
+                extracted_err_code, f"Vendor Error ({extracted_err_code})"
+            )
             if match_id and match_stat:
                 v_id = match_id.group(1)
                 v_stat = match_stat.group(1)
@@ -364,6 +397,23 @@ class Command(BaseCommand):
                                 "failure_reason",
                             ]
                         )
+                    attempt = (
+                        MessageAttempt.objects.filter(segment=part)
+                        .order_by("-started_at")
+                        .first()
+                    )
+                    if attempt:
+                        attempt.status = new_status
+                        attempt.completed_at = now
+                        fields_to_update = ["status", "completed_at"]
+
+                        if new_status == "FAILED":
+                            attempt.error_message = (
+                                f"Vendor DLR Error: {extracted_err_code}"
+                            )
+                            fields_to_update.append("error_message")
+
+                        attempt.save(update_fields=fields_to_update)
                     # 2. CREATE THE DLR EVENT LOG (The Boss's Requirement)
                     DLREvent.objects.create(
                         message=part.message,
@@ -375,6 +425,7 @@ class Command(BaseCommand):
                             "raw_smpp_string": content
                         },  # Saving exactly what the vendor sent
                         status_code=extracted_err_code,
+                        status_description=human_description,
                     )
                     # 3. CHECK THE PARENT MESSAGE STATUS
                     self.update_parent_message_status(part.message)
