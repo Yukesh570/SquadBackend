@@ -76,6 +76,11 @@ class GenerateClientInvoiceView(APIView):
         setupRule = InvoiceSetup.objects.filter(
             company=client.company, isDeleted=False
         ).first()
+        if setupRule == None:
+            return Response(
+                {"error": "No Invoice Setup found for this client's company."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         business_entity = setupRule.businessEntity if setupRule else None
 
         tax_amount = 0

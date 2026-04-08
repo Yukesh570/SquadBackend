@@ -49,6 +49,10 @@ class Client(models.Model):
         choices=ROUTE_CHOICES,
         default="DIRECT",
     )
+    enableDlr = models.BooleanField(
+        default=True,
+        help_text="Enable to allow this client to receive final Delivery Receipts. Disable to save server resources.",
+    )
     paymentTerms = models.CharField(
         max_length=8,
         choices=PAYMENTTERMS_CHOICES,

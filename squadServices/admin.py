@@ -374,6 +374,7 @@ class clientAdmin(admin.ModelAdmin):
         "ratePlanName",
         "smppUsername",
         "status",
+        "enableDlr",
         "route",
         "paymentTerms",
         "isDeleted",
@@ -493,6 +494,8 @@ class SMSMessageAdmin(admin.ModelAdmin):
         "segmentNumber",  # Kept as your original CharField
         "characterCount",  # Kept as your original CharField
         "concatenated_reference",  # The new puzzle ID
+        "sendClientDlr",
+        "clientDlrPushed",
         "isDeleted",
         "queued_at",
     )

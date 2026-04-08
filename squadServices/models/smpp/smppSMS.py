@@ -33,6 +33,15 @@ class SMSMessage(models.Model):
     message_id = models.CharField(
         max_length=255, blank=True, null=True, db_index=True
     )  # ID from SMSC
+    sendClientDlr = models.BooleanField(
+        default=False,
+        help_text="True if the client requested a DLR AND their account is allowed to receive them.",
+    )
+    clientDlrPushed = models.BooleanField(
+        default=False,
+        help_text="True if we have successfully forwarded the final DLR back to the client.",
+    )
+
     client = models.ForeignKey(
         Client,
         null=True,

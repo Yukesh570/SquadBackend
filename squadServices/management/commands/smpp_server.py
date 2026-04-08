@@ -1,4 +1,5 @@
 # myapp/management/commands/run_smpp_server.py
+from ast import If
 import asyncio
 from csv import writer
 import math
@@ -37,10 +38,10 @@ HOST = "0.0.0.0"
 PORT = 2775
 
 # SMPP Command IDs
-CMD_BIND_RECEIVER = 0x00000001
+CMD_BIND_RECEIVER = 0x00000001  # this is the command that a client sends to your server when they want to log in as a Receiver (listen-only).
 CMD_BIND_TRANSMITTER = 0x00000002
 CMD_BIND_TRANSCEIVER = 0x00000009
-CMD_SUBMIT_SM = 0x00000004
+CMD_SUBMIT_SM = 0x00000004  # this is the command that the client sends to your server when they want to send an SMS. It contains all the details of the message, including the destination number, the text, and whether they want a DLR or not.
 CMD_ENQUIRE_LINK = 0x00000015
 CMD_DELIVER_SM = 0x00000005
 # Response IDs (Request ID + 0x80000000)
@@ -49,6 +50,7 @@ CMD_BIND_TRANSMITTER_RESP = 0x80000002
 CMD_BIND_TRANSCEIVER_RESP = 0x80000009
 CMD_SUBMIT_SM_RESP = 0x80000004
 CMD_ENQUIRE_LINK_RESP = 0x80000015
+CMD_DELIVER_SM_RESP = 0x80000005  # <--- ADD THIS LINE
 CMD_GENERIC_NACK = 0x80000000
 
 # SMPP Status
@@ -60,39 +62,9 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     help = "Runs a lightweight SMPP Server to receive SMS"
 
-    # def update_sms_status(self, msg_id, status):
-    #     # 1. Standardize the incoming status string
-    #     # Clean the status: uppercase and remove extra spaces
-    #     clean_status = status.strip().upper()
-
-    #     # 2. Map carrier status to YOUR internal model choices
-    #     # (queued, sent, failed, delivered)
-    #     status_map = {
-    #         "DELIVRD": "delivered",
-    #         "UNDELIV": "failed",
-    #         "EXPIRED": "failed",
-    #         "REJECTD": "failed",
-    #         "DELETED": "failed",
-    #         "ACCEPTD": "sent",
-    #         "UNKNOWN": "sent",
-    #     }
-
-    #     # Default to "sent" if the carrier returns something we don't recognize
-    #     mapped_status = status_map.get(clean_status, "sent")
-
-    #     # 3. Update the database using the unique message_id
-    #     # We use .update() because it is efficient and doesn't trigger extra signals
-    #     updated_rows = SMSMessage.objects.filter(message_id=msg_id).update(
-    #         status=mapped_status
-    #     )
-
-    #     if updated_rows > 0:
-
-    #         logger.info(f"DLR Update Success: Message {msg_id} is now {mapped_status}")
-    #     else:
-    #         logger.warning(
-    #             f"DLR Update Orphaned: Received DLR for ID {msg_id}, but not found in DB."
-    #         )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.active_clients = {}  # Dictionary to hold open TCP connections
 
     async def generate_message_id(self):  # If it has 'async'
         return str(uuid.uuid4())
@@ -132,8 +104,10 @@ class Command(BaseCommand):
         Otherwise, check if the IP is whitelisted at all.
         """
         if client_obj:
-            return IpWhitelist.objects.filter(ip=ip_address, client=client_obj).exists()
-        return IpWhitelist.objects.filter(ip=ip_address).exists()
+            return IpWhitelist.objects.filter(
+                ip=ip_address, client=client_obj, isDeleted=False
+            ).exists()
+        return IpWhitelist.objects.filter(ip=ip_address, isDeleted=False).exists()
 
     @sync_to_async
     def authenticate_client(self, username, password):
@@ -143,47 +117,26 @@ class Command(BaseCommand):
         """
         try:
             client = Client.objects.filter(
-                smppUsername=username, smppPassword=password
+                smppUsername=username, smppPassword=password, isDeleted=False
             ).first()
+            clientStatus = client.status
+            if not client:
+                logger.warning(
+                    f"Auth Failed: Invalid credentials or deleted account for '{username}'."
+                )
+                return None
+
+            # if client.status not in ["ACTIVE", "TRIAL"]:
+            #     logger.warning(
+            #         f"Auth Failed: Account '{username}' is currently {client.status}."
+            #     )
+
+            #     return None
+
             return client
         except Exception as e:
-            logger.error(f"Auth Lookup Error: {e}")
+            logger.error(f"Auth Lookup Error for '{username}': {e}")
             return None
-
-    # Get all the smppuser from smpp database
-    # @sync_to_async
-    # def authenticate_and_get_route(self, username, password):
-    #     """
-    #     Authenticates the client and finds their assigned vendor via CustomRoute.
-    #     """
-
-    #     try:
-    #         # 1. Authenticate the Client
-    #         client = Client.objects.filter(
-    #             smppUsername=username, smppPassword=password
-    #         ).first()  # Get the actual object, not just True/False
-    #         print("smpp client:::::::", client)
-    #         if not client:
-    #             return None, None, None
-
-    #         # 2. Find the CustomRoute for this Client
-    #         # We look for an active route that isn't deleted
-    #         route = (
-    #             CustomRoute.objects.filter(
-    #                 orginatingClient=client, status="ACTIVE", isDeleted=False
-    #             )
-    #             .select_related("terminatingVendor")
-    #             .first()
-    #         )
-
-    #         if route and route.terminatingVendor.smpp.id:
-    #             return client, route.terminatingVendor, route.terminatingVendor.smpp
-
-    #         return client, None, None  # Client is valid, but no route/vendor found
-
-    #     except Exception as e:
-    #         logger.error(f"Auth/Route Lookup Error: {e}")
-    #         return None, None, None
 
     def handle(self, *args, **kwargs):
         self.stdout.write(f"Starting SMPP Server on {HOST}:{PORT}...")
@@ -197,6 +150,8 @@ class Command(BaseCommand):
 
     async def run_server(self):
         server = await asyncio.start_server(self.handle_client, HOST, PORT)
+        # --- 2. START THE BACKGROUND LOOP HERE ---
+        asyncio.create_task(self.dlr_dispatcher_loop())
         async with server:
             await server.serve_forever()
 
@@ -204,7 +159,9 @@ class Command(BaseCommand):
         addr = writer.get_extra_info("peername")
         client_ip = addr[0]
         logger.info(f"New connection from {addr}")
-
+        # --- 3. TRACK THE SYSTEM ID ---
+        system_id_logged_in = None
+        # ------------------------------
         try:
             while True:
                 # 1. Read SMPP Header
@@ -239,6 +196,21 @@ class Command(BaseCommand):
                     client_obj = await self.authenticate_client(system_id, password)
 
                     if client_obj:
+                        if client_obj.status not in ["ACTIVE", "TRIAL"]:
+                            logger.warning(
+                                f"Blocking {system_id}: Account is {client_obj.status}."
+                            )
+
+                            # Send Bind Failed (0x0D)
+                            await self.send_bind_error_with_tlv(
+                                writer,
+                                cmd_id,
+                                0x0000000D,  # 13 in decimal
+                                seq_num,
+                                f"Account {system_id} is {client_obj.status}. Please contact support.",
+                            )
+                            writer.close()
+                            return
                         # Check IP Whitelist for this specific client
                         is_whitelisted = await self.check_ip_whitelist(
                             client_ip, client_obj=client_obj
@@ -249,9 +221,17 @@ class Command(BaseCommand):
                                 f"Blocking {system_id}: IP {client_ip} not whitelisted."
                             )
                             # Send Bind Failed (0x0D) and close
-                            await self.send_pdu(
-                                writer, cmd_id | 0x80000000, 0x0000000D, seq_num, b""
+                            await self.send_bind_error_with_tlv(
+                                writer,
+                                cmd_id,
+                                0x0000000D,  # 13 in decimal
+                                seq_num,
+                                f"IP {client_ip} is not whitelisted for account {system_id}",
                             )
+
+                            # await self.send_pdu(
+                            #     writer, cmd_id | 0x80000000, 0x0000000D, seq_num, b""
+                            # )
                             writer.close()
                             return
 
@@ -260,7 +240,8 @@ class Command(BaseCommand):
                         writer.client_obj = client_obj
                         # writer.vendor_obj = vendor_obj
                         # writer.smpp_obj = smpp_obj
-
+                        system_id_logged_in = system_id
+                        self.active_clients[system_id] = writer
                         resp_body = system_id.encode("ascii") + b"\0"
                         await self.send_pdu(
                             writer,
@@ -273,8 +254,13 @@ class Command(BaseCommand):
                     else:
                         # AUTH FAILURE
                         logger.warning(f"Auth Failed: {system_id}")
-                        await self.send_pdu(
-                            writer, cmd_id | 0x80000000, 0x0000000F, seq_num, b""
+                        # ⚡️ THE FIX: Send the TLV explaining bad credentials (Status 15 / 0x0F)
+                        await self.send_bind_error_with_tlv(
+                            writer,
+                            cmd_id,
+                            0x0000000F,  # 15 in decimal
+                            seq_num,
+                            "Invalid Username or Password",
                         )
                         writer.close()
                         return
@@ -288,7 +274,7 @@ class Command(BaseCommand):
                             # CMD_SUBMIT_SM_RESP sends back the response to the client that sent the SUBMIT_SM command. We use it here to tell the client that their attempt was rejected due to lack of authentication.
                             writer,
                             CMD_SUBMIT_SM_RESP,
-                            0x00000004,
+                            0x0000000F,
                             seq_num,
                             b"",
                         )
@@ -313,25 +299,16 @@ class Command(BaseCommand):
                     await self.send_pdu(
                         writer, CMD_ENQUIRE_LINK_RESP, ESME_ROK, seq_num, b""
                     )
+
                 # i commented Because your script is acting as the SMPP Server, it should never accept a Delivery Receipt from a client. If they send one, it will now fall into the else: block and your server will correctly reject it with a Generic NACK error.
                 # he DELIVER_SM command only flows in one direction: From the Server to the Client.
-                # elif (  # it talks to Your customers client (e.g., Acme Corp).
-                #     cmd_id == CMD_DELIVER_SM
-                # ):  # (Incoming Messages & Receipts) (This is a DLR)
+                elif (  # it talks to Your customers client (e.g., Acme Corp).
+                    cmd_id == CMD_DELIVER_SM_RESP
+                ):  # (Incoming Messages & Receipts) (This is a DLR)
 
-                #     dlr_text = body_data.decode("utf-8", errors="ignore")
+                    pass
 
-                #     match_id = re.search(r"id:([A-F0-9]+)", dlr_text)
-                #     match_stat = re.search(r"stat:([A-Z]+)", dlr_text)
-
-                #     if match_id and match_stat:
-                #         target_id = match_id.group(1)
-                #         new_status = match_stat.group(1)
-
-                #         # 3. Update your database
-                #         await self.update_sms_status(target_id, new_status)
-
-                #     # 4. Respond to the carrier that you received the DLR
+                    # 4. Respond to the carrier that you received the DLR
 
                 else:
                     # Unknown command, send Generic NACK
@@ -342,6 +319,9 @@ class Command(BaseCommand):
         except Exception as e:
             logger.error(f"Error handling client: {e}")
         finally:
+            # --- 5. REMOVE THEM WHEN THEY DISCONNECT ---
+            if system_id_logged_in and system_id_logged_in in self.active_clients:
+                del self.active_clients[system_id_logged_in]
             writer.close()
             await writer.wait_closed()
 
@@ -412,33 +392,57 @@ class Command(BaseCommand):
         self, client_obj, route_data, total_segments, sms_message_obj
     ):
         vendor_obj = route_data["vendor"]
-        terminatingCompany_obj = route_data["terminatingCompany"]
-        clientCompany_obj = client_obj.company
+        # terminatingCompany_obj = route_data["terminatingCompany"]
+        # clientCompany_obj = client_obj.company
+
+        raw_terminating_company = route_data["terminatingCompany"]
+        raw_client_company = client_obj.company
         with transaction.atomic():
+            # ⚡️ 1. THE PADLOCK: Fetch locked versions of the rows directly from the DB
+            locked_terminating_company = (
+                type(raw_terminating_company)
+                .objects.select_for_update()
+                .get(id=raw_terminating_company.id)
+            )
+            locked_client = Client.objects.select_for_update().get(id=client_obj.id)
+            locked_client_company = (
+                type(raw_client_company)
+                .objects.select_for_update()
+                .get(id=raw_client_company.id)
+            )
             print("\n" + "=" * 50)
             print("💳 CREDIT DEDUCTION TRIGGERED 💳")
             print(
-                f"1. Vendor Company: {terminatingCompany_obj} -> usedVendorCredit increased by {route_data['total_vendor_cost']}"
+                f"1. Vendor Company: {locked_terminating_company} -> usedVendorCredit increased by {route_data['total_vendor_cost']}"
             )
             print(
-                f"2. Client Account: {client_obj} -> usedCredit increased by {route_data['total_client_cost']}"
+                f"2. Client Account: {locked_client} -> usedCredit increased by {route_data['total_client_cost']}"
             )
             print(
-                f"3. Client Parent Company: {clientCompany_obj} -> usedCustomerCredit increased by {route_data['total_client_cost']}"
+                f"3. Client Parent Company: {locked_client_company} -> usedCustomerCredit increased by {route_data['total_client_cost']}"
             )
             print("=" * 50 + "\n")
-            # ---------------------------------------
+            # ---------------------------------------\
+            # ⚡️ 2. THE MATH: Only update the locked versions of the objects
             # 1. Add to Vendor's Used Credit
-            terminatingCompany_obj.usedVendorCredit += route_data["total_vendor_cost"]
-            terminatingCompany_obj.save()
+            locked_terminating_company.usedVendorCredit += route_data[
+                "total_vendor_cost"
+            ]
+            locked_terminating_company.save(update_fields=["usedVendorCredit"])
+            # terminatingCompany_obj.usedVendorCredit += route_data["total_vendor_cost"]
+            # terminatingCompany_obj.save()
 
             # 2. Add to Client's Used Credit
-            client_obj.usedCredit += route_data["total_client_cost"]
-            client_obj.save()
+            locked_client.usedCredit += route_data["total_client_cost"]
+            locked_client.save(update_fields=["usedCredit"])
+            # client_obj.usedCredit += route_data["total_client_cost"]
+            # client_obj.save()
 
             # 3. Add to the Global Company's Used Credit
-            clientCompany_obj.usedCustomerCredit += route_data["total_client_cost"]
-            clientCompany_obj.save()
+            locked_client_company.usedCustomerCredit += route_data["total_client_cost"]
+            locked_client_company.save(update_fields=["usedCustomerCredit"])
+            # clientCompany_obj.usedCustomerCredit += route_data["total_client_cost"]
+            # clientCompany_obj.save()
             VendorTransaction.objects.create(
                 vendor=vendor_obj,
                 message=sms_message_obj,
@@ -446,20 +450,23 @@ class Command(BaseCommand):
                 segments=total_segments,
                 ratePerSegment=route_data["vendor_cost"],
                 amount=route_data["total_vendor_cost"],
-                balanceSpent=terminatingCompany_obj.usedVendorCredit,
+                # balanceSpent=terminatingCompany_obj.usedVendorCredit,
+                balanceSpent=locked_terminating_company.usedVendorCredit,
                 description=f"Routing charge for SMS {sms_message_obj.message_id}",
             )
 
             # 2. Client Ledger (Uncomment when you add the balance field to Client)
 
             ClientTransaction.objects.create(
-                client=client_obj,
+                # client=client_obj,
+                client=locked_client,  # Use locked_client for accurate foreign key reference
                 message=sms_message_obj,
                 transactionType=TransactionType.DEDUCTION,
                 segments=total_segments,
                 ratePerSegment=route_data["client_cost"],
                 amount=route_data["total_client_cost"],
-                balanceSpent=client_obj.usedCredit,
+                # balanceSpent=client_obj.usedCredit,
+                balanceSpent=locked_client.usedCredit,
                 description=f"Sent SMS {sms_message_obj.message_id}",
             )
             DetailedSMSReport.objects.create(
@@ -468,7 +475,8 @@ class Command(BaseCommand):
                 senderId=sms_message_obj.systemId,  # or your source address
                 text=sms_message_obj.text,
                 part_total=total_segments,
-                client=client_obj.smppUsername,
+                # client=client_obj.smppUsername,
+                client=locked_client.smppUsername,
                 clientRate=route_data["client_cost"],
                 client_charge=route_data["total_client_cost"],
                 vendor=vendor_obj.profileName,
@@ -510,7 +518,10 @@ class Command(BaseCommand):
             logger.warning(
                 f"Invalid destination number rejected: {raw_destination_addr}"
             )
-            await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x0000000B, seq_num, b"")
+            await self.send_error_with_tlv(
+                writer, seq_num, error_msg="Invalid Destination Number"
+            )
+            # await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x0000000B, seq_num, b"")
             # You should probably reject the SMPP message here!
             return None
         destination_addr = validated_number.replace("+", "")
@@ -524,8 +535,15 @@ class Command(BaseCommand):
         offset += 1
         schedule_delivery_time, offset = self.read_c_string(body, offset)
         validity_period, offset = self.read_c_string(body, offset)
-        registered_delivery = body[offset]
+        registered_delivery = body[
+            offset
+        ]  # this value came for the  client when they send the SUBMIT_SM command. It indicates whether the client wants a DLR for this message or not.
         offset += 1
+        client_wants_dlr = (
+            registered_delivery == 1
+        )  # compare with 1 because in SMPP, a value of 1 means "Yes, I want a DLR", while 0 means "No, I don't want a DLR".
+        client_allowed_dlr = getattr(client_obj, "enableDlr", False)
+        final_send_dlr_decision = client_wants_dlr and client_allowed_dlr
         replace_if_present_flag = body[offset]
         offset += 1
         data_coding = body[offset]
@@ -534,13 +552,42 @@ class Command(BaseCommand):
         offset += 1
         sm_length = body[offset]
         offset += 1
-        short_message = body[offset : offset + sm_length].decode(
-            "utf-8", errors="ignore"
-        )
+
+        # Extract the raw bytes first
+        raw_short_message = body[offset : offset + sm_length]
+        print("Raw short message bytes:", raw_short_message)
+        # Decode properly based on the Data Coding flag (8 = UCS2/UTF-16)
+        if data_coding == 8:
+            short_message = raw_short_message.decode("utf-16-be", errors="ignore")
+        else:
+            short_message = raw_short_message.decode("utf-8", errors="ignore")
+        print("Decoded short message:", short_message)
+
+        # Bulletproof Postgres Guard: Strip any stray Null bytes!
+        short_message = short_message.replace("\x00", "")
+
+        # short_message = body[offset : offset + sm_length].decode(
+        #     "utf-8", errors="ignore"
+        # )
         encoding_type = self.detect_encoding(short_message)
         total_segments, total_chars = self.calculate_segments(
             short_message, encoding_type
         )
+        if not short_message.strip():
+            account_name = client_obj.smppUsername if client_obj else "UnknownClient"
+            logger.warning(f"Rejected: Empty message payload from {account_name}")
+            await self.send_error_with_tlv(
+                writer, seq_num, error_msg="Message text cannot be empty."
+            )
+            return None
+
+        # ⚡️ GUARD 2: Sender ID Length
+        if len(source_addr) > 15:
+            logger.warning(f"Rejected: Sender ID '{source_addr}' too long.")
+            await self.send_error_with_tlv(
+                writer, seq_num, error_msg="Invalid Sender ID: Exceeds 15 chars."
+            )
+            return None
         route_data, routing_error = await self.get_route_and_potential_cost(
             client_obj, destination_addr, total_segments
         )
@@ -553,7 +600,8 @@ class Command(BaseCommand):
             logger.warning(
                 f"Routing/Billing Failed for {destination_addr}: {routing_error}"
             )
-            await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
+            await self.send_error_with_tlv(writer, seq_num, error_msg=routing_error)
+            # await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
             return None  # This will trigger the 0x0000000B rejection in handle_client!
         vendor = route_data["vendor"]
         smpp = route_data["smpp"]
@@ -580,6 +628,7 @@ class Command(BaseCommand):
                 vendor,
                 unique_msg_id,
                 concat_ref=concat_ref,
+                sendClientDlr=final_send_dlr_decision,
             )
             await self.perform_actual_deduction(
                 client_obj, route_data, total_segments, saved_msg
@@ -591,7 +640,10 @@ class Command(BaseCommand):
             return unique_msg_id
         except Exception as e:
             logger.error(f"Failed to process SMS/Billing: {e}")
-            await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
+            await self.send_error_with_tlv(
+                writer, seq_num, error_msg="Internal Gateway Error. Please retry."
+            )
+            # await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
             return None
 
     @sync_to_async
@@ -608,6 +660,7 @@ class Command(BaseCommand):
         vendor=None,
         unique_msg_id=None,
         concat_ref=None,  # <--- NEW: Pass the reference number here
+        sendClientDlr=False,
     ):
         """
         Django ORM is synchronous, so we wrap it in sync_to_async
@@ -625,12 +678,50 @@ class Command(BaseCommand):
             vendor=vendor,
             message_id=unique_msg_id,
             concatenated_reference=concat_ref,
+            sendClientDlr=sendClientDlr,
             queued_at=timezone.now(),
             external_id=uuid.uuid4(),
         )
         create_message_parts(parent_msg, text)
         return parent_msg
 
+    # TLV = Type-Length-Value
+    async def send_error_with_tlv(self, writer, seq, error_msg="Low Balance"):
+        """Bypasses strict SMPP rules by faking a success to deliver the text."""
+        cmd_id = CMD_SUBMIT_SM_RESP  # submit_sm_resp
+        print("=========send_error_with_tlv==========cmd_id:", cmd_id)
+
+        # The server pretends the message was a Success (Status 0), but hides the real error text inside the mandatory message_id field.
+        # ⚡️ THE HACK: Force Status 0 so the library doesn't delete our text!
+        status = 0x00
+
+        # Add 'ERR:' so the client knows this is actually a rejection
+        safe_msg = f"ERR:{error_msg}"[:64].encode("ascii", errors="ignore") + b"\0"
+        # Construct the header and send the packet
+        length_header = 16 + len(safe_msg)
+        header = struct.pack(">IIII", length_header, cmd_id, status, seq)
+
+        writer.write(header + safe_msg)
+        await writer.drain()
+
+    async def send_bind_error_with_tlv(
+        self, writer, cmd_id, status, seq, error_msg="Bind Failed"
+    ):
+        print(f"===================Sending BIND error (Status {status}): {error_msg}")
+        print("===========send_bind_error_with_tlv========cmd_id:", cmd_id)
+        # 1. Bind responses must contain the system_id.
+        # Since the login failed, we just send an empty string (a single null byte).
+        body_system_id = b"\0"
+
+        # 2. Construct Header and Send
+        # NO TLVs! We bypass the library bug entirely.
+        length_header = 16 + len(body_system_id)
+        header = struct.pack(">IIII", length_header, cmd_id | 0x80000000, status, seq)
+
+        writer.write(header + body_system_id)
+        await writer.drain()
+
+    # send_pdu is the only way your server can send a reply back to the client.
     async def send_pdu(self, writer, cmd_id, status, seq, body):
         """Constructs and writes the SMPP PDU"""
         length = 16 + len(body)
@@ -657,3 +748,164 @@ class Command(BaseCommand):
     def extract_c_string(self, data, offset):
         val, _ = self.read_c_string(data, offset)
         return val
+
+    @sync_to_async
+    def get_pending_dlrs(self):
+        """Fetches messages from the DB that are finished but haven't sent a DLR back to the client yet."""
+        return list(
+            # WE ADDED .select_related('client') HERE so we can access the username!
+            SMSMessage.objects.select_related("client")
+            .prefetch_related("dlrevent_set")  # connect the dlrEvent to the smsMessage
+            .filter(
+                sendClientDlr=True,
+                clientDlrPushed=False,
+                status__in=["delivered", "failed", "partially_delivered"],
+            )[:50]
+        )
+
+    @sync_to_async
+    def mark_dlr_pushed(self, msg_obj):
+        """Marks the message so we don't send the same receipt twice."""
+        msg_obj.clientDlrPushed = True
+        msg_obj.save(update_fields=["clientDlrPushed"])
+
+    async def dlr_dispatcher_loop(self):
+        """Runs constantly in the background looking for receipts to send."""
+        await asyncio.sleep(5)  # Let the server fully start up first
+
+        while True:
+            try:
+                pending_msgs = await self.get_pending_dlrs()
+
+                for msg in pending_msgs:
+                    # ---> THE FIX <---
+                    # Find the connection using the Client's login username ("yukesh"),
+                    # NOT the SMS Sender ID ("SQUAD")!
+                    target_username = msg.client.smppUsername if msg.client else None
+
+                    if target_username and target_username in self.active_clients:
+                        writer = self.active_clients[target_username]
+
+                        # Push the receipt down the socket!
+                        await self.send_deliver_sm(writer, msg)
+
+                        # Mark it as sent in the database
+                        await self.mark_dlr_pushed(msg)
+                        logger.info(
+                            f"Pushed DLR to {target_username} for msg ID: {msg.message_id}"
+                        )
+
+            except Exception as e:
+                logger.error(f"DLR Dispatcher Error: {e}")
+
+            # Wait 2 seconds before checking the database again
+            await asyncio.sleep(2)
+
+    async def send_deliver_sm(self, writer, msg_obj):
+        """Formats and sends the exact SMPP bytes for a Delivery Receipt."""
+
+        # grabs the most recent DLR event for this message to get the real status code (instead of just "delivered" or "failed" from the SMSMessage table)
+        latest_event = await sync_to_async(
+            lambda: msg_obj.dlrevent_set.order_by("-received_at").first()
+        )()
+        real_err = (
+            latest_event.status_code
+            if latest_event and latest_event.status_code
+            else "000"
+        )
+
+        # 1. Get the total parts from the parent message
+        total_parts = int(msg_obj.segmentNumber) if msg_obj.segmentNumber else 1
+
+        # 2. Count how many parts are actually marked 'DELIVERED' in the database
+        # Use sync_to_async because this is a new database query
+        delivered_parts_count = await sync_to_async(
+            lambda: msg_obj.parts.filter(submit_status="DELIVERED").count()
+        )()
+        # 1. Format Dates (YYMMDDHHMMSS)
+        submit_date = (
+            msg_obj.queued_at.strftime("%y%m%d%H%M%S")
+            if msg_obj.queued_at
+            else timezone.now().strftime("%y%m%d%H%M%S")
+        )
+        done_date = timezone.now().strftime("%y%m%d%H%M%S")
+
+        # 2. Map standard DB status to Telecom Status
+        stat_map = {
+            "delivered": "DELIVRD",
+            "failed": "REJECTD",
+            "partially_delivered": "DELIVRD",
+        }
+        smpp_stat = stat_map.get(msg_obj.status, "UNKNOWN")
+
+        # 3. Create the DLR text string
+
+        # ONLY GET 20 LETTER OF THE TEXT
+        short_text = msg_obj.text[:20] if msg_obj.text else ""
+
+        # If your message has 1 part: it becomes 001.
+
+        # If your message has 2 parts: it becomes 002.
+
+        # If your message has 10 parts: it becomes 010.
+        # The :03 part inside the curly braces tells
+        # Python: "I want this number to be at least 3 characters wide
+        dlr_string = (
+            f"id:{msg_obj.message_id} "
+            f"sub:{total_parts:03} "  # submitted parts (total parts in the message)
+            f"dlvrd:{delivered_parts_count:03} "
+            f"submit date:{submit_date} "
+            f"done date:{done_date} "
+            f"stat:{smpp_stat} "
+            f"err:{real_err} "  # <--- Now using your DLREvent table!
+            f"text:{short_text}"
+        )
+        # We send back the exact message_id we generated for them in SUBMIT_SM_RESP
+        # dlr_string = f"id:{msg_obj.message_id} sub:001 dlvrd:001 submit date:{submit_date} done date:{done_date} stat:{smpp_stat} err:000 text:{short_text}"
+        dlr_bytes = dlr_string.encode("utf-8", errors="ignore")
+
+        # 4. Pack the SMPP Body
+        service_type = b"\0"
+        source_addr_ton = b"\x01"
+        source_addr_npi = b"\x01"
+        source_addr = msg_obj.destination.encode("ascii") + b"\0"
+
+        dest_addr_ton = b"\x01"
+        dest_addr_npi = b"\x01"
+        dest_addr = msg_obj.systemId.encode("ascii") + b"\0"
+
+        esm_class = b"\x04"  # 0x04 tells the client "This is a Receipt!"
+        protocol_id = b"\x00"
+        priority_flag = b"\x00"
+        schedule_delivery_time = b"\0"
+        validity_period = b"\0"
+        registered_delivery = b"\x00"
+        replace_if_present_flag = b"\x00"
+        data_coding = b"\x00"
+        sm_default_msg_id = b"\x00"
+        sm_length = struct.pack(">B", len(dlr_bytes))
+
+        body = (
+            service_type
+            + source_addr_ton
+            + source_addr_npi
+            + source_addr
+            + dest_addr_ton
+            + dest_addr_npi
+            + dest_addr
+            + esm_class
+            + protocol_id
+            + priority_flag
+            + schedule_delivery_time
+            + validity_period
+            + registered_delivery
+            + replace_if_present_flag
+            + data_coding
+            + sm_default_msg_id
+            + sm_length
+            + dlr_bytes
+        )
+
+        # 5. Send it (0x00000005 is CMD_DELIVER_SM)
+        seq_num = secrets.randbelow(0x7FFFFFFF)
+        await self.send_pdu(writer, 0x00000005, 0x00000000, seq_num, body)

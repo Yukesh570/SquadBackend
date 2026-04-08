@@ -411,6 +411,8 @@ class Command(BaseCommand):
                     "REJECTD": "FAILED",
                     "UNDELIV": "FAILED",
                     "EXPIRED": "FAILED",
+                    "DELETED": "FAILED",
+                    "UNKNOWN": "FAILED",
                 }
                 new_status = status_map.get(v_stat, "SUBMITTED")
 
