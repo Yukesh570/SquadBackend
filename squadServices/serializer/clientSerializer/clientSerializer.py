@@ -21,6 +21,7 @@ class ClientSerializer(serializers.ModelSerializer):
             "balanceAlertAmount",
             "allowNetting",
             "ipWhitelist",
+            "enableDlr",
             "smppUsername",
             "smppPassword",
             "internalNotes",
