@@ -5,7 +5,7 @@ import smpplib.exceptions
 import sys  # <-- Used to stop the script safely
 
 # Configuration
-SERVER_IP = "192.168.10.3"
+SERVER_IP = "192.168.1.146"
 PORT = 2775
 
 client = smpplib.client.Client(SERVER_IP, PORT)
@@ -24,11 +24,10 @@ def handle_sent_sms(pdu):
 
         # ⚡️ THE MAGIC: Check if the ID is actually our Trojan Horse error!
         if msg_id.startswith("ERR:"):
-            print(f"\n⚠️ SQUAD SERVER REJECTED MESSAGE")
+            print(f"⚠️ SQUAD SERVER REJECTED MESSAGE")
             print(f"❌ SQUAD REASON: {msg_id[4:].strip()}")
         else:
-            print(f"\n✅ SMS Accepted by Squad!")
-            print(f"Unique Message ID: {msg_id}")
+            print(f"✅ SMS Part Accepted by Squad! ID: {msg_id}")
 
 
 def handle_deliver_sm(pdu):
@@ -59,20 +58,40 @@ try:
     client.bind_transceiver(system_id="yukesh", password="yukesh")
     print("✅ Successfully Bound")
 
-    print("Sending SMS...")
-    msg = " 😊There is a awarness program today,The prograssssssssssssaaaaaaaaaaaaaaaaasssssssm is very important,The program will st be able to get in please call 9801234567"
-    pdu = client.send_message(
-        source_addr_ton=5,
-        source_addr_npi=0,
-        source_addr="SQUAD",
-        dest_addr_ton=smpplib.consts.SMPP_TON_INTL,
-        dest_addr_npi=smpplib.consts.SMPP_NPI_ISDN,
-        destination_addr="+573213389839",
-        short_message=msg.encode("utf-8"),
-        data_coding=0,  # 8=UCS2, 0=GSM7
-        registered_delivery=True,
-    )
-    # Listen for responses
+    print("\nPreparing MASSIVE SMS for splitting...")
+    msg = "⚡️ SQUAD ALERT: This is a test message to demonstrate automatic splitting of long messages with emojis!😊"
+    # base_sentence = "There is an awareness program today, please call 9801234567. "
+    # msg = "😊 " + (base_sentence * 12)
+    # 1. ⚡️ THE SPLITTER: Let the library calculate the chunks, the UDH, and the encoding!
+    parts, encoding_flag, msg_type_flag = smpplib.gsm.make_parts(msg)
+    # print("parts", parts)
+    # print("encoding_flag", encoding_flag)
+    # print("msg_type_flag", msg_type_flag)
+    # print(
+    #     f"📦 Message automatically split into {len(parts)} parts! Firing them at the server..."
+    # )
+
+    # 2. ⚡️ THE LOOP: Fire each part over the network separately
+    for i, part in enumerate(parts):
+        print(f"   -> Firing Part {i+1}...")
+        client.send_message(
+            source_addr_ton=5,
+            source_addr_npi=0,
+            source_addr="SQUAD",
+            dest_addr_ton=smpplib.consts.SMPP_TON_INTL,
+            dest_addr_npi=smpplib.consts.SMPP_NPI_ISDN,
+            destination_addr="+573213389839",
+            # destination_addr="+9779851047370",
+            # Send the specific binary chunk (which now has the UDH prepended to it)
+            short_message=part,
+            # The library automatically figured out we need UCS-2 (8) because of the emojis
+            data_coding=encoding_flag,
+            # The library automatically turns on the 0x40 bit to tell your server it's multipart
+            esm_class=msg_type_flag,
+            registered_delivery=True,
+        )
+
+    # Listen for all the responses
     client.listen()
 
 except smpplib.exceptions.PDUError as e:
@@ -82,14 +101,14 @@ except smpplib.exceptions.PDUError as e:
     )
 
     print("\n⚠️ SQUAD SERVER REJECTED REQUEST")
-    # if status_code == 12:
-    #     print("❌ REASON: Invalid Destination Number")
-    # elif status_code == 13:
-    #     print("❌ REASON: IP Address Not Whitelisted (Or Invalid System ID)")
-    # elif status_code == 15:
-    #     print("❌ REASON: Invalid Password")
-    # else:
-    print(f"❌ PROTOCOL REASON: Status Code {status_code}")
+    if status_code == 12:
+        print("❌ REASON: Invalid Destination Number")
+    elif status_code == 13:
+        print("❌ REASON: IP Address Not Whitelisted (Or Invalid System ID)")
+    elif status_code == 15:
+        print("❌ REASON: Invalid Password")
+    else:
+        print(f"❌ PROTOCOL REASON: Status Code {status_code}")
 
     sys.exit(1)  # Stop the script safely
 

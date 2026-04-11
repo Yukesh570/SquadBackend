@@ -19,16 +19,17 @@ from squadServices.models.country import Country
 from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
 from squadServices.models.operators.operators import Operators
 from squadServices.models.routeManager.customRoute import CustomRoute
-from squadServices.models.smpp.smppSMS import SMSMessage
+from squadServices.models.smpp.smppSMS import SMSMessage, SMSMessagePart
 import re
 from django.db import transaction
-
+from datetime import timedelta
 from squadServices.models.transaction.transaction import (
     ClientTransaction,
     TransactionType,
     VendorTransaction,
 )
 import uuid
+import redis.asyncio as redis
 
 # from squadServices.models.transaction import transaction
 
@@ -110,6 +111,46 @@ class Command(BaseCommand):
         return IpWhitelist.objects.filter(ip=ip_address, isDeleted=False).exists()
 
     @sync_to_async
+    def reap_stale_messages(self):
+        """
+        Production Reaper: Sweeps messages stuck in 'queued' beyond the timeout threshold
+        and marks them as failed due to vendor unresponsiveness.
+        """
+        # Define the maximum time a message is allowed to wait for a vendor (e.g., 5 minutes)
+        timeout_threshold = timezone.now() - timedelta(seconds=5)
+        stale_msgs = SMSMessage.objects.filter(
+            status="queued",
+            queued_at__lte=timeout_threshold,
+            sendClientDlr=True,
+            clientDlrPushed=False,
+        )
+
+        reaped_count = stale_msgs.count()
+        if reaped_count == 0:
+            return  # Exit cleanly if nothing is stuck
+
+        for msg in stale_msgs:
+            msg.status = "failed"
+            msg.save(update_fields=["status"])
+            # 2. ---> NEW: Instantly fail all associated parts <---
+            # This prevents the background worker from ever picking them up
+            SMSMessagePart.objects.filter(message=msg).update(
+                submit_status="FAILED",
+                failed_at=timezone.now(),
+                failure_reason="Reaper Timeout: Message was stuck in queue too long.",
+            )
+
+            # Create an official DLR event for the timeout (408 Request Timeout)
+            msg.dlrevent_set.create(
+                status_code="408",
+            )
+
+        # Log the failure professionally on the server
+        logger.error(
+            f"Gateway Timeout: {reaped_count} queued messages marked FAILED due to vendor unresponsiveness."
+        )
+
+    @sync_to_async
     def authenticate_client(self, username, password):
         """
         Strictly handles authentication. We don't route yet because
@@ -149,6 +190,10 @@ class Command(BaseCommand):
     # The moment an external client (like another SMPP server or SMS gateway) connects to your port
 
     async def run_server(self):
+        # ⚡️ Using DB=1 keeps our SMPP buffer strictly separated from Celery (DB=0)
+        self.redis_client = redis.Redis(
+            host="localhost", port=6379, db=1, decode_responses=True
+        )
         server = await asyncio.start_server(self.handle_client, HOST, PORT)
         # --- 2. START THE BACKGROUND LOOP HERE ---
         asyncio.create_task(self.dlr_dispatcher_loop())
@@ -491,6 +536,91 @@ class Command(BaseCommand):
 
         logger.info(f"Ledger updated for Msg {sms_message_obj.message_id}")
 
+    async def save_to_buffer(
+        self, system_id, destination, ref_num, total_parts, part_num, text_chunk
+    ):
+        """Saves chunks to server RAM at lightning speed."""
+        key = f"smpp:buffer:{system_id}:{destination}:{ref_num}"
+
+        # Use a pipeline to send multiple commands to Redis in a single atomic transaction
+        async with self.redis_client.pipeline(transaction=True) as pipe:
+            pipe.hset(key, f"part_{part_num}", text_chunk)
+            pipe.hset(key, "total_parts", total_parts)
+            # ⚡️ 5-MINUTE AUTO KILL SWITCH (Solves Frankenstein Collisions!)
+            pipe.expire(key, 300)
+            await pipe.execute()
+
+    async def get_buffered_parts(self, system_id, destination, ref_num):
+        """Fetches and sorts the chunks from RAM."""
+        key = f"smpp:buffer:{system_id}:{destination}:{ref_num}"
+        data = await self.redis_client.hgetall(key)
+
+        if not data:
+            return []
+
+        # Extract only the parts and sort them
+        parts = []
+        for field, value in data.items():
+            if field.startswith("part_"):
+                p_num = int(field.split("_")[1])
+                parts.append((p_num, value))
+
+        parts.sort(
+            key=lambda x: x[0]
+        )  # Sort by part_num to ensure the sentence is in order!
+
+        # Create a tiny mock object so we don't have to change your Reassembler code!
+        class BufferedPart:
+            def __init__(self, text):
+                self.text_chunk = text
+
+        return [BufferedPart(text) for _, text in parts]
+
+    async def clear_buffer(self, system_id, destination, ref_num):
+        """Wipes the chunks from RAM once stitched."""
+        key = f"smpp:buffer:{system_id}:{destination}:{ref_num}"
+        await self.redis_client.delete(key)
+
+    # @sync_to_async
+    # def save_to_buffer(
+    #     self, system_id, destination, ref_num, total_parts, part_num, text_chunk
+    # ):
+    #     from squadServices.models.smpp.smppSMS import MultipartBuffer
+
+    #     obj, created = MultipartBuffer.objects.get_or_create(
+    #         system_id=system_id,
+    #         destination=destination,
+    #         ref_num=ref_num,
+    #         part_num=part_num,
+    #         defaults={"total_parts": total_parts, "text_chunk": text_chunk},
+    #     )
+    #     return obj
+
+    # @sync_to_async
+    # def get_buffered_parts(self, system_id, destination, ref_num):
+    #     from squadServices.models.smpp.smppSMS import MultipartBuffer
+
+    #     # ⚡️ PROTECT AGAINST 255-LOOP COLLISIONS
+    #     # Only look for parts that arrived in the last 5 minutes
+    #     time_threshold = timezone.now() - timedelta(minutes=5)
+    #     # Fetch all parts and order them by part_num so the sentence is stitched correctly!
+    #     return list(
+    #         MultipartBuffer.objects.filter(
+    #             system_id=system_id,
+    #             destination=destination,
+    #             ref_num=ref_num,
+    #             created_at__gte=time_threshold,
+    #         ).order_by("part_num")
+    #     )
+
+    # @sync_to_async
+    # def clear_buffer(self, system_id, destination, ref_num):
+    #     from squadServices.models.smpp.smppSMS import MultipartBuffer
+
+    #     MultipartBuffer.objects.filter(
+    #         system_id=system_id, destination=destination, ref_num=ref_num
+    #     ).delete()
+
     async def handle_submit_sm(self, body, seq_num, writer):
         """
         Parses the SUBMIT_SM body and saves to Django DB.
@@ -556,23 +686,119 @@ class Command(BaseCommand):
         # Extract the raw bytes first
         raw_short_message = body[offset : offset + sm_length]
         print("Raw short message bytes:", raw_short_message)
-        # Decode properly based on the Data Coding flag (8 = UCS2/UTF-16)
-        if data_coding == 8:
-            short_message = raw_short_message.decode("utf-16-be", errors="ignore")
+        offset += sm_length
+
+        while offset < len(body):
+            if len(body) - offset < 4:
+                break
+            tlv_tag, tlv_len = struct.unpack(">HH", body[offset : offset + 4])
+            offset += 4
+            tlv_value = body[offset : offset + tlv_len]
+            offset += tlv_len
+
+            if tlv_tag == 0x0424:
+                raw_short_message = tlv_value
+                logger.info(
+                    f"📦 Found giant message in TLV! Size: {len(raw_short_message)} bytes"
+                )
+        # ---------------------------------- if message is coming in as a multi-part message ---------------------------------------------
+        is_multipart = (esm_class & 0x40) > 0
+        ref_num = None
+        total_parts = 1
+        part_num = 1
+
+        if is_multipart:
+            udh_length = raw_short_message[0]
+            udh_bytes = raw_short_message[: udh_length + 1]
+            raw_short_message = raw_short_message[udh_length + 1 :]
+
+            if udh_length == 5 and udh_bytes[1] == 0x00:
+                ref_num = udh_bytes[3]
+                total_parts = udh_bytes[4]
+                part_num = udh_bytes[5]
+
+                # 1. Decode just this specific chunk
+                if data_coding == 8:
+                    chunk_text = raw_short_message.decode(
+                        "utf-16-be", errors="ignore"
+                    ).replace("\x00", "")
+                else:
+                    chunk_text = raw_short_message.decode(
+                        "utf-8", errors="ignore"
+                    ).replace("\x00", "")
+
+                # 2. Park it in the Waiting Room
+                await self.save_to_buffer(
+                    client_obj.smppUsername,
+                    destination_addr,
+                    ref_num,
+                    total_parts,
+                    part_num,
+                    chunk_text,
+                )
+                print(
+                    f"📦 Parked Part {part_num} of {total_parts} in Waiting Room (Ref: {ref_num})"
+                )
+
+                # 3. Check if we have all the pieces
+                buffered_parts = await self.get_buffered_parts(
+                    client_obj.smppUsername, destination_addr, ref_num
+                )
+
+                if len(buffered_parts) < total_parts:
+                    # ⚠️ WE ARE STILL WAITING FOR MORE PARTS!
+                    # Return a success to the client so they keep sending, but STOP processing this specific packet.
+                    temp_msg_id = await self.generate_message_id()
+                    resp_body = temp_msg_id.encode("ascii") + b"\0"
+                    await self.send_pdu(
+                        writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
+                    )
+                    return temp_msg_id
+
+                # 🎉 GRAND FINALE: ALL PARTS HAVE ARRIVED!
+                print(
+                    f"✅ All {total_parts} parts received! Stitching message together..."
+                )
+
+                # 4. Stitch the text together (they are already ordered by part_num from the DB query)
+                print(
+                    f"✅ All {total_parts} parts received! Stitching message together..."
+                )
+                # 5. Clean out the waiting room
+                await self.clear_buffer(
+                    client_obj.smppUsername, destination_addr, ref_num
+                )
+                short_message = "".join([p.text_chunk for p in buffered_parts])
+
+                # 6. Override the variables so the rest of the script treats this as one giant normal message
+
+                # encoding_type = self.detect_encoding(short_message)
+                # total_segments, total_chars = self.calculate_segments(
+                #     short_message, encoding_type
+                # )
+
+                is_multipart = (
+                    False  # Turn this off so it behaves like a normal message
+                )
+                ref_num = None  # Wipe the client's reference number!
         else:
-            short_message = raw_short_message.decode("utf-8", errors="ignore")
-        print("Decoded short message:", short_message)
+            # If it's a normal, single-part message, handle it normally
+            if data_coding == 8:
+                short_message = raw_short_message.decode(
+                    "utf-16-be", errors="ignore"
+                ).replace("\x00", "")
+            else:
+                short_message = raw_short_message.decode(
+                    "utf-8", errors="ignore"
+                ).replace("\x00", "")
 
-        # Bulletproof Postgres Guard: Strip any stray Null bytes!
-        short_message = short_message.replace("\x00", "")
+            # encoding_type = self.detect_encoding(short_message)
+            # total_segments, total_chars = self.calculate_segments(
+            #     short_message, encoding_type
+            # )
 
-        # short_message = body[offset : offset + sm_length].decode(
-        #     "utf-8", errors="ignore"
-        # )
-        encoding_type = self.detect_encoding(short_message)
-        total_segments, total_chars = self.calculate_segments(
-            short_message, encoding_type
-        )
+        # --------------------------------END REASSEMBLER ENGINE ---------------------------------------------
+
         if not short_message.strip():
             account_name = client_obj.smppUsername if client_obj else "UnknownClient"
             logger.warning(f"Rejected: Empty message payload from {account_name}")
@@ -588,13 +814,44 @@ class Command(BaseCommand):
                 writer, seq_num, error_msg="Invalid Sender ID: Exceeds 15 chars."
             )
             return None
+
+        encoding_type = self.detect_encoding(short_message)
+        total_segments, total_chars = self.calculate_segments(
+            short_message, encoding_type
+        )
+        final_total_parts = total_segments
+
+        # ------------------------------------------------------------------
+        # ⚡️ GUARD 3: Segment Count Limit (Protect against massive messages)
+        # ------------------------------------------------------------------
+        # Check if the client has a specific limit in the DB, otherwise default to a safe 10 parts
+        # MAX_ALLOWED_SEGMENTS = getattr(client_obj, "maxSegments", 10)
+        # since i dont have maxsegment in clinet so i put 10 as default
+
+        MAX_ALLOWED_SEGMENTS = 10
+        if final_total_parts > MAX_ALLOWED_SEGMENTS:
+            logger.warning(
+                f"Rejected: Message from {client_obj.smppUsername} exceeds segment limit "
+                f"({final_total_parts} parts > {MAX_ALLOWED_SEGMENTS} allowed)."
+            )
+            await self.send_error_with_tlv(
+                writer,
+                seq_num,
+                error_msg=f"Message too long. Max segments allowed: {MAX_ALLOWED_SEGMENTS}.",
+            )
+            return None
+        final_concat_ref = None
+        concat_ref = None
+        if final_total_parts > 1:
+            # Generate a random 1-byte reference (0-255)
+            final_concat_ref = secrets.randbelow(256)
+            logger.info(
+                f"Server generated new internal Reference Number: {final_concat_ref}"
+            )
         route_data, routing_error = await self.get_route_and_potential_cost(
             client_obj, destination_addr, total_segments
         )
-        concat_ref = None
-        if total_segments > 1:
-            # Generate a random 1-byte reference (0-255)
-            concat_ref = secrets.randbelow(256)
+
         # response for routing/billing failures
         if routing_error:
             logger.warning(
@@ -620,18 +877,18 @@ class Command(BaseCommand):
                 destination_addr,
                 short_message,
                 encoding_type,
-                total_segments,
+                final_total_parts,
                 total_chars,
                 source_addr,
                 smpp,
                 client_obj,  # client data
                 vendor,
                 unique_msg_id,
-                concat_ref=concat_ref,
+                concat_ref=final_concat_ref,
                 sendClientDlr=final_send_dlr_decision,
             )
             await self.perform_actual_deduction(
-                client_obj, route_data, total_segments, saved_msg
+                client_obj, route_data, final_total_parts, saved_msg
             )
             resp_body = unique_msg_id.encode("ascii") + b"\0"
             await self.send_pdu(
@@ -680,7 +937,7 @@ class Command(BaseCommand):
             concatenated_reference=concat_ref,
             sendClientDlr=sendClientDlr,
             queued_at=timezone.now(),
-            external_id=uuid.uuid4(),
+            # external_id=uuid.uuid4(),
         )
         create_message_parts(parent_msg, text)
         return parent_msg
@@ -775,6 +1032,7 @@ class Command(BaseCommand):
 
         while True:
             try:
+                await self.reap_stale_messages()
                 pending_msgs = await self.get_pending_dlrs()
 
                 for msg in pending_msgs:

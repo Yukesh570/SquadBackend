@@ -25,7 +25,7 @@ class SMSMessage(models.Model):
         ),  # Added based on our previous logic
     )
     external_id = models.UUIDField(
-        default=uuid.uuid4, editable=False, unique=True, db_index=True
+        default=uuid.uuid4, editable=False, unique=True, db_index=True, null=True
     )
     destination = models.CharField(max_length=20)
     text = models.TextField()
@@ -265,3 +265,19 @@ class MessageAuditLog(models.Model):
 
     def __str__(self):
         return f"Msg {self.message.id}: {self.from_status} -> {self.to_status}"
+
+
+class MultipartBuffer(models.Model):
+    """Temporary waiting room for UDH multipart SMS chunks."""
+
+    system_id = models.CharField(max_length=100)
+    destination = models.CharField(max_length=50)
+    ref_num = models.IntegerField()  # The UDH Reference Number
+    total_parts = models.IntegerField()
+    part_num = models.IntegerField()
+    text_chunk = models.TextField()  # The decoded text for this specific part
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Prevents duplicate saves if the client has a network hiccup and retries a part
+        unique_together = ("system_id", "destination", "ref_num", "part_num")

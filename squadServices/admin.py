@@ -24,6 +24,7 @@ from squadServices.models.smpp.smppSMS import (
     DLREvent,
     MessageAttempt,
     MessageAuditLog,
+    MultipartBuffer,
     SMSMessage,
     SMSMessagePart,
 )
@@ -1082,6 +1083,36 @@ class MessageAuditLogAdmin(admin.ModelAdmin):
     # # 3. SECURITY: Prevent admins from deleting evidence/history
     # def has_delete_permission(self, request, obj=None):
     #     return False
+
+
+@admin.register(MultipartBuffer)
+class MultipartBufferAdmin(admin.ModelAdmin):
+    # Columns shown in the main list view
+    list_display = (
+        "system_id",
+        "destination",
+        "ref_num",
+        "part_num",
+        "total_parts",
+        "created_at",
+    )
+
+    # Adds a filter sidebar on the right
+    list_filter = ("system_id", "created_at")
+
+    # Adds a search bar at the top
+    search_fields = ("system_id", "destination", "ref_num", "text_chunk")
+
+    # Orders by newest first
+    ordering = ("-created_at",)
+
+    # Protects the timestamp from being edited
+    readonly_fields = ("created_at",)
+
+    # Optional: If you want to prevent staff from manually adding/editing chunks,
+    # since this should only be controlled by the SMPP server.
+    def has_add_permission(self, request):
+        return False
 
 
 admin.site.register(CustomRoute, CustomRouteAdmin)

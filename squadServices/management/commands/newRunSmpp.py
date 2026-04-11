@@ -1,3 +1,4 @@
+from datetime import timedelta
 import time
 import logging
 import socket
@@ -34,12 +35,18 @@ class Command(BaseCommand):
         self.sessions = {}
         # This maps the SMPP Sequence Number to our Database PART ID
         self.sequence_to_part_id = {}
+        self.last_sweep_time = 0
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("Starting Multi-Gateway SMPP Manager..."))
 
         while True:
             try:
+                # ---> 1. Professionally clean up unresponsive vendor messages first
+                # ONLY run the sweeper once every 60 seconds to save database performance
+                if time.time() - self.last_sweep_time > 60:
+                    self.sweep_stale_submissions()
+                    self.last_sweep_time = time.time()  # Reset the clock
                 # STEP 1: Process Outgoing Queue (NOW PULLING PARTS, NOT PARENT MESSAGES)
                 # We use select_related to easily access the parent message's config
                 queued_parts = (
@@ -52,7 +59,21 @@ class Command(BaseCommand):
 
                 for part in queued_parts:
                     parent_msg = part.message
-
+                    if parent_msg.status == "failed":
+                        part.submit_status = "FAILED"
+                        part.failed_at = timezone.now()
+                        part.failure_reason = (
+                            "Cancelled: Parent message already failed."
+                        )
+                        part.save(
+                            update_fields=[
+                                "submit_status",
+                                "failed_at",
+                                "failure_reason",
+                            ]
+                        )
+                        continue
+                    # ------------------------------------------------
                     if not parent_msg.smpp:
                         part.submit_status = "FAILED"
                         part.save()
@@ -78,12 +99,32 @@ class Command(BaseCommand):
                             f"Connecting to {parent_msg.smpp.smppHost}..."
                         )
                         client = self.connect_to_gateway(parent_msg.smpp)
-
+                        print("Client after connection attempt:", client)
                         if client:
                             # If the connection succeeds, it saves the active connection object into the dictionary
                             # so the next message in the queue can use it instantly.
                             self.sessions[smpp_id] = client
                         else:
+                            self.stdout.write(
+                                self.style.ERROR(
+                                    f"Connection to Vendor {smpp_id} failed! Marking part as FAILED."
+                                )
+                            )
+                            part.submit_status = "FAILED"
+                            part.failed_at = timezone.now()
+                            part.failure_reason = (
+                                "Vendor Connection Failed (Server Down/Timeout)."
+                            )
+                            part.save(
+                                update_fields=[
+                                    "submit_status",
+                                    "failed_at",
+                                    "failure_reason",
+                                ]
+                            )
+
+                            # Ensure the parent message also knows it failed!
+                            self.update_parent_message_status(parent_msg)
                             continue
 
                     # Send the specific part
@@ -372,6 +413,41 @@ class Command(BaseCommand):
 
         except Exception as e:
             print(f"--- DEBUG: Error inside handle_sent_confirmation: {e} ---")
+
+    def sweep_stale_submissions(self):
+        """
+        Scans for messages that were sent to the vendor but never received a DLR
+        within the acceptable timeout window (e.g., 24 hours).
+        """
+        # Define how long you are willing to wait for a vendor DLR (e.g., 24 hours)
+        timeout_threshold = timezone.now() - timedelta(hours=24)
+
+        stale_parts = SMSMessagePart.objects.filter(
+            submit_status="SUBMITTED", submitted_at__lte=timeout_threshold
+        ).select_related("message")
+
+        count = stale_parts.count()
+        if count == 0:
+            return
+
+        for part in stale_parts:
+            # 1. Fail the specific part
+            part.submit_status = "FAILED"
+            part.failed_at = timezone.now()
+            part.failure_reason = "Vendor Timeout: No DLR received within 24 hours."
+            part.save(update_fields=["submit_status", "failed_at", "failure_reason"])
+
+            # 2. Log it professionally in the Detailed Report
+            DetailedSMSReport.objects.filter(message=part.message).update(
+                submitStatus="FAILED"
+            )
+
+            # 3. Recalculate parent message status
+            self.update_parent_message_status(part.message)
+
+        logger.error(
+            f"SYSTEM TIMEOUT: {count} messages were marked FAILED because the vendor never responded."
+        )
 
     # it talks to the telecom vendor
     def handle_incoming(self, pdu, config):
