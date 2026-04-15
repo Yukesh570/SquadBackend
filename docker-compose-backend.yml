@@ -96,9 +96,9 @@ services:
       - "2775:2775" # Open SMPP port to the world
     restart: always
 
-  puskarServer:
+  puskarserver:
     build: .
-    container_name: puskarServer
+    container_name: puskarserver
     command: python manage.py puskarServer
     env_file:
       - .env
