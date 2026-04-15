@@ -17,6 +17,7 @@ from squadServices.controller.campaignController import (
 from squadServices.controller.clientController.clientController import (
     ClientViewSet,
     IpWhiteListViewSet,
+    PuskarClientViewSet,
 )
 from squadServices.controller.companyController import (
     CompanyCategoryViewSet,
@@ -368,6 +369,15 @@ urlpatterns = [
         ClientViewSet.as_view(
             {
                 "get": "list",
+                "post": "create",
+            }
+        ),
+        name="client",
+    ),
+    path(
+        "duplicateClinet/",
+        PuskarClientViewSet.as_view(
+            {
                 "post": "create",
             }
         ),

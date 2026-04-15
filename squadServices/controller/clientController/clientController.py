@@ -1,6 +1,8 @@
+import random
 from rest_framework import viewsets, permissions
 
 from squadServices.controller.companyController import ExtendedFilterSet
+from squadServices.controller.user import User
 from squadServices.helper.action import (
     log_action_create,
     log_action_delete,
@@ -22,7 +24,9 @@ from squadServices.models.users import UserLog
 from squadServices.serializer.clientSerializer.clientSerializer import (
     ClientSerializer,
     IpWhitelistSerializer,
+    PuskarClientSerializer,
 )
+from rest_framework.permissions import AllowAny
 
 
 class ClientFilter(ExtendedFilterSet):
@@ -105,6 +109,62 @@ class ClientViewSet(viewsets.ModelViewSet):
         instance.updatedBy = user
         instance.save()
         log_action_delete(user, "Client", instance.name)
+
+
+class PuskarClientViewSet(viewsets.ModelViewSet):
+    serializer_class = PuskarClientSerializer
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    permission_classes = [AllowAny]
+
+    filterset_class = ClientFilter
+
+    def perform_create(self, serializer):
+        name = serializer.validated_data.get("name")
+        smppUsername = serializer.validated_data.get("name")
+        clean_name = name.replace(" ", "")
+        safe_smpp_username = clean_name[:15]
+        # 2. Enforce the 8-character limit for Password
+        # We take the first 4 letters of the name, and append 4 random numbers
+        prefix = clean_name[:4]  # Gets up to 4 chars
+        random_suffix = random.randint(1000, 9999)  # 4 digits
+
+        # This guarantees the password is exactly 8 characters (or less if the name is super short)
+        safe_smpp_password = f"{prefix}{random_suffix}"
+        print("nam1111111111111111111111111111111111111e", name)
+        exist = Client.objects.filter(
+            Q(name__iexact=name) | Q(smppUsername__iexact=safe_smpp_username),
+            isDeleted=False,
+        )
+        if exist.exists():
+            raise ValidationError(
+                {"error": "Client with this name or smppUsername already exists."}
+            )
+
+        clean_name = name.replace(" ", "")
+
+        try:
+            sweta_user = User.objects.get(
+                username="sweta"
+            )  # Adjust 'username' if your login field is different (e.g., 'email')
+        except User.DoesNotExist:
+            raise ValidationError(
+                {
+                    "error": "The default user 'sweta' could not be found in the database."
+                }
+            )
+        serializer.save(
+            ratePlanName="Puskar Default Rate Plan",
+            company=Company.objects.first(),
+            balanceAlertAmount=0,
+            allowNetting=False,
+            enableDlr=True,
+            status="Active",
+            smppUsername=safe_smpp_username,
+            smppPassword=safe_smpp_password,
+            createdBy=sweta_user,  # Updated
+            updatedBy=sweta_user,
+        )
 
 
 class IpWhitelistFilter(django_filters.FilterSet):

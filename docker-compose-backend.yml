@@ -96,6 +96,20 @@ services:
       - "2775:2775" # Open SMPP port to the world
     restart: always
 
+  puskarServer:
+    build: .
+    container_name: puskarServer
+    command: python manage.py puskarServer
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - rabbitmq
+    ports:
+      - "2776:2776"
+      - "2777:2777" # Open SMPP port to the world
+    restart: always
+
   # --- SMPP Manager (Processes Outgoing SMS Queue) ---
   smpp-manager:
     build: .
