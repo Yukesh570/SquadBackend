@@ -5,7 +5,7 @@ import datetime
 from django.core.management.base import BaseCommand
 import uuid
 from asgiref.sync import sync_to_async
-
+from django.db.models import Q
 import requests
 
 from squadServices.models.clientModel.client import Client
@@ -82,7 +82,9 @@ class Command(BaseCommand):
         print(f"Password provided: {password}")
         try:
             client = Client.objects.filter(
-                smppUsername=username, smppPassword=password, isDeleted=False
+                (Q(DsmppUsername=username) | Q(FsmppUsername=username)),
+                smppPassword=password,
+                isDeleted=False,
             ).first()
 
             # ⚡️ 1. First, check if the client actually exists!

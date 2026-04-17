@@ -36,10 +36,12 @@ CORS_ALLOW_ALL_ORIGINS = True
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "rest_framework_simplejwt",
     "squadServices.apps.SquadServicesConfig",
     # "squadServices",
     "rest_framework",
+    "channels",
     "django_filters",
     "corsheaders",
     "drf_spectacular",
@@ -191,3 +193,17 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+# Tell Django to use ASGI instead of WSGI
+ASGI_APPLICATION = (
+    "squad.asgi.application"  # Replace "squad" with your main project folder name
+)
+
+# Configure the Redis layer
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}

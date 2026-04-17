@@ -1,4 +1,4 @@
-from squadServices.models.clientModel.client import Client, IpWhitelist
+from squadServices.models.clientModel.client import Client, IpWhitelist, PuskarClient
 
 from rest_framework import serializers
 
@@ -15,9 +15,11 @@ class ClientSerializer(serializers.ModelSerializer):
             "ratePlanName",
             "name",
             "status",
+            "bindStatus",
             "route",
             "paymentTerms",
             "creditLimit",
+            "invoicePolicy",
             "balanceAlertAmount",
             "allowNetting",
             "ipWhitelist",
@@ -26,51 +28,11 @@ class ClientSerializer(serializers.ModelSerializer):
             "smppPassword",
             "internalNotes",
             "createdAt",
+        ]
+        read_only_fields = [
+            "bindStatus",
         ]
         # extra_kwargs = {"smppPassword": {"write_only": True}}
-
-
-class PuskarClientSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Client
-        fields = [
-            "id",
-            "company",
-            "ratePlanName",
-            "name",
-            "status",
-            "route",
-            "paymentTerms",
-            "creditLimit",
-            "balanceAlertAmount",
-            "allowNetting",
-            "ipWhitelist",
-            "enableDlr",
-            "smppUsername",
-            "smppPassword",
-            "internalNotes",
-            "createdAt",
-        ]
-
-        # Tell DRF to completely ignore these fields during POST/PUT requests,
-        # but still include them in the JSON response.
-        read_only_fields = [
-            "company",
-            "ratePlanName",
-            "status",
-            "route",
-            "paymentTerms",
-            "creditLimit",
-            "balanceAlertAmount",
-            "allowNetting",
-            "ipWhitelist",
-            "enableDlr",
-            "smppUsername",
-            "smppPassword",
-            "internalNotes",
-        ]
-        # Note: 'id' and 'createdAt' are automatically read-only by DRF,
-        # so you don't even need to list them here!
 
 
 class IpWhitelistSerializer(serializers.ModelSerializer):
@@ -84,4 +46,22 @@ class IpWhitelistSerializer(serializers.ModelSerializer):
             "client",
             "clientName",
             "createdAt",
+        ]
+
+
+class PuskarClientSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PuskarClient
+        fields = [
+            "id",
+            "name",
+            "DsmppUsername",
+            "FsmppUsername",
+            "smppPassword",
+            "createdAt",
+        ]
+        read_only_fields = [
+            "DsmppUsername",
+            "FsmppUsername",
+            "smppPassword",
         ]

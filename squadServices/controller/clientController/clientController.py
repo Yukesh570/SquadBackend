@@ -17,7 +17,7 @@ from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
-from squadServices.models.clientModel.client import Client, IpWhitelist
+from squadServices.models.clientModel.client import Client, IpWhitelist, PuskarClient
 from squadServices.models.company import Company
 from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.users import UserLog
@@ -51,6 +51,7 @@ class ClientFilter(ExtendedFilterSet):
             "company__name": ["exact", "icontains", "isnull"],
             "smppUsername": ["exact", "icontains", "isnull"],
             "paymentTerms": ["exact", "icontains", "isnull"],
+            "bindStatus": ["exact", "icontains", "isnull"],
             "creditLimit": ["exact", "gt", "lt", "range", "isnull"],
             "balanceAlertAmount": ["exact", "gt", "lt", "range", "isnull"],
             "allowNetting": ["exact"],
@@ -117,23 +118,27 @@ class PuskarClientViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     permission_classes = [AllowAny]
 
-    filterset_class = ClientFilter
-
     def perform_create(self, serializer):
         name = serializer.validated_data.get("name")
         smppUsername = serializer.validated_data.get("name")
         clean_name = name.replace(" ", "")
-        safe_smpp_username = clean_name[:15]
+        safe_smpp_username = clean_name[:10]
         # 2. Enforce the 8-character limit for Password
         # We take the first 4 letters of the name, and append 4 random numbers
         prefix = clean_name[:4]  # Gets up to 4 chars
         random_suffix = random.randint(1000, 9999)  # 4 digits
+        random_suffix2 = random.randint(1000, 9999)  # 4 digits
+        random_suffix3 = random.randint(1000, 9999)  # 4 digits
+
+        finalDsmppUsername = f"{safe_smpp_username}{random_suffix}"
+        finalFsmppUsername = f"{safe_smpp_username}{random_suffix2}"
+        finalFsmppUsername = f"{safe_smpp_username}{random_suffix3}"
 
         # This guarantees the password is exactly 8 characters (or less if the name is super short)
         safe_smpp_password = f"{prefix}{random_suffix}"
         print("nam1111111111111111111111111111111111111e", name)
-        exist = Client.objects.filter(
-            Q(name__iexact=name) | Q(smppUsername__iexact=safe_smpp_username),
+        exist = PuskarClient.objects.filter(
+            Q(name__iexact=name),
             isDeleted=False,
         )
         if exist.exists():
@@ -154,13 +159,8 @@ class PuskarClientViewSet(viewsets.ModelViewSet):
                 }
             )
         serializer.save(
-            ratePlanName="Puskar Default Rate Plan",
-            company=Company.objects.first(),
-            balanceAlertAmount=0,
-            allowNetting=False,
-            enableDlr=True,
-            status="Active",
-            smppUsername=safe_smpp_username,
+            DsmppUsername=finalDsmppUsername,
+            FsmppUsername=finalFsmppUsername,
             smppPassword=safe_smpp_password,
             createdBy=sweta_user,  # Updated
             updatedBy=sweta_user,

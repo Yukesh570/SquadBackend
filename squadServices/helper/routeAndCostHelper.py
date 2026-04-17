@@ -1,10 +1,6 @@
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.routeManager.customRoute import CustomRoute
-from squadServices.models.transaction.transaction import (
-    ClientTransaction,
-    VendorTransaction,
-)
 
 
 def get_route_and_cost(originating_client, destination_country):

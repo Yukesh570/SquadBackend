@@ -16,13 +16,10 @@ import uuid
 class SMSMessage(models.Model):
     STATUS_CHOICES = (
         ("queued", "Queued"),
-        ("sent", "Sent"),
+        ("submitted", "Submitted"),
         ("failed", "Failed"),
         ("delivered", "Delivered"),
-        (
-            "partially_delivered",
-            "Partially Delivered",
-        ),  # Added based on our previous logic
+        # Added based on our previous logic
     )
     external_id = models.UUIDField(
         default=uuid.uuid4, editable=False, unique=True, db_index=True, null=True
@@ -95,6 +92,28 @@ class SMSMessage(models.Model):
 
     def __str__(self):
         return f"{self.destination} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        # 1. Save the SMSMessage to the database first
+        super().save(*args, **kwargs)
+
+        # 2. Instantly force the Transaction to match our status!
+        if self.status:
+            # Import inside the function to prevent circular import crashes
+            from squadServices.models.transaction.transaction import (
+                ClientTransaction,
+                VendorTransaction,
+            )
+
+            # Sync Client Transaction
+            ClientTransaction.objects.filter(message=self).update(status=self.status)
+
+            # Sync Vendor Transaction
+            VendorTransaction.objects.filter(message=self).update(status=self.status)
+
+            print(
+                f"🔥 HARDWIRED SUCCESS: Synced Client & Vendor Transactions for Msg #{self.id} to '{self.status}'"
+            )
 
     class Meta:
         ordering = ["-updatedAt"]

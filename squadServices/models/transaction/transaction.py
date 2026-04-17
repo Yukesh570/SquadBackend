@@ -12,6 +12,20 @@ class TransactionType(models.TextChoices):
     TOPUP = "TOPUP", "Top-Up"
 
 
+POLICY_CHOICES = [
+    ("ON ATTEMPT", "on attempt"),
+    ("ON SUBMIT", "on submit"),
+    ("ON DELIVERED", "on delivered"),
+]
+STATUS_CHOICES = (
+    ("queued", "Queued"),
+    ("submitted", "Submitted"),
+    ("failed", "Failed"),
+    ("delivered", "Delivered"),
+    # Added based on our previous logic
+)
+
+
 class ClientTransaction(models.Model):
     client = models.ForeignKey(
         Client, on_delete=models.CASCADE, related_name="transactions"
@@ -34,7 +48,16 @@ class ClientTransaction(models.Model):
         max_digits=10, decimal_places=4, null=True, blank=True
     )
     # ----------------------------------
-
+    taxAmount = models.DecimalField(
+        max_digits=10, decimal_places=4, null=True, blank=True
+    )
+    chargePolicy = models.CharField(
+        max_length=20,
+        choices=POLICY_CHOICES,
+        default="ON ATTEMPT",
+    )
+    currency = models.CharField(max_length=10, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
     amount = models.DecimalField(max_digits=10, decimal_places=4)  # Segments * Rate
     balanceSpent = models.DecimalField(max_digits=10, decimal_places=4)
     description = models.CharField(max_length=255, blank=True)
@@ -79,7 +102,16 @@ class VendorTransaction(models.Model):
         max_digits=10, decimal_places=4, null=True, blank=True
     )
     # ----------------------------------
-
+    taxAmount = models.DecimalField(
+        max_digits=10, decimal_places=4, null=True, blank=True
+    )
+    chargePolicy = models.CharField(
+        max_length=20,
+        choices=POLICY_CHOICES,
+        default="ON ATTEMPT",
+    )
+    currency = models.CharField(max_length=10, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
     amount = models.DecimalField(max_digits=10, decimal_places=4)
     balanceSpent = models.DecimalField(max_digits=10, decimal_places=4)
     description = models.CharField(max_length=255, blank=True)

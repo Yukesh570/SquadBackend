@@ -9,6 +9,12 @@ CONNECTION_TYPE_CHOICES = [
     ("HTTP", "HTTP"),
 ]
 
+POLICY_CHOICES = [
+    ("ON ATTEMPT", "on attempt"),
+    ("ON SUBMIT", "on submit"),
+    ("ON DELIVERED", "on delivered"),
+]
+
 
 class Vendor(models.Model):
     company = models.ForeignKey(
@@ -29,6 +35,11 @@ class Vendor(models.Model):
         choices=CONNECTION_TYPE_CHOICES,
         default="SMPP",
         verbose_name="connection type",
+    )
+    invoicePolicy = models.CharField(
+        max_length=20,
+        choices=POLICY_CHOICES,
+        default="ON ATTEMPT",
     )
     isDeleted = models.BooleanField(default=False)
     createdBy = models.ForeignKey(

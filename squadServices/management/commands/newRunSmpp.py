@@ -272,7 +272,7 @@ class Command(BaseCommand):
             )
 
             if parent_msg.status == "queued":
-                parent_msg.status = "sent"
+                parent_msg.status = "submitted"
                 parent_msg.submitted_at = timezone.now()
                 parent_msg.save(update_fields=["status", "submitted_at"])
 
@@ -595,7 +595,7 @@ class Command(BaseCommand):
             new_parent_status = "failed"
         elif delivered_count > 0 and (delivered_count + failed_count == total_parts):
             # Some delivered, some failed, and no more are pending
-            new_parent_status = "partially_delivered"
+            new_parent_status = "failed"  # partially_delivered
 
         # Only hit the database if the status actually changed
         if new_parent_status != parent_msg.status or failed_count > 0:
@@ -621,7 +621,7 @@ class Command(BaseCommand):
             elif new_parent_status == "failed":
                 parent_msg.failed_at = now
                 parent_msg.failure_reason = f"All segments failed. {detailed_reason}"
-            elif new_parent_status == "partially_delivered":
+            elif new_parent_status == "failed":  # partially_delivered
                 # For partial, we still set delivered_at because SOME of it
                 # reached the user, but we add a note to the failure reason.
                 parent_msg.delivered_at = now

@@ -17,7 +17,11 @@ ROUTE_CHOICES = [
     ("WHOLESALE", "wholesale"),
     ("FULL", "full"),
 ]
-
+POLICY_CHOICES = [
+    ("ON ATTEMPT", "on attempt"),
+    ("ON SUBMIT", "on submit"),
+    ("ON DELIVERED", "on delivered"),
+]
 PAYMENTTERMS_CHOICES = [
     ("PREPAID", "prepaid"),
     ("POSTPAID", "postpaid"),
@@ -44,6 +48,13 @@ class Client(models.Model):
         choices=STATUS_CHOICES,
         default="ACTIVE",
     )
+    # Add this below your other status fields in the Client model
+    bindStatus = models.CharField(
+        max_length=10,
+        choices=[("ONLINE", "Online"), ("OFFLINE", "Offline")],
+        default="OFFLINE",
+        help_text="Live indicator of whether the client is currently connected to our SMPP server.",
+    )
     route = models.CharField(
         max_length=20,
         choices=ROUTE_CHOICES,
@@ -63,6 +74,12 @@ class Client(models.Model):
         max_digits=18, decimal_places=4, default=0.00
     )
 
+    invoicePolicy = models.CharField(
+        max_length=20,
+        choices=POLICY_CHOICES,
+        default="ON ATTEMPT",
+    )
+
     # for now......
     usedCredit = models.DecimalField(
         max_digits=18,
@@ -73,6 +90,24 @@ class Client(models.Model):
     allowNetting = models.BooleanField(default=False)
     smppUsername = models.CharField(max_length=255)
     smppPassword = models.CharField(max_length=255)
+
+    timeOut = models.IntegerField(
+        default=30,
+        help_text="Time in seconds before SMPP connection times out due to inactivity",
+    )
+    rate = models.IntegerField(
+        default=0,
+        help_text="Max SUBMIT_SM per second (0=unlimited)",
+    )
+    window = models.IntegerField(
+        default=10,
+        help_text="Max outstanding unacked SUBMIT_SM",
+    )
+    enquire = models.IntegerField(
+        default=30,
+        help_text="Time in seconds between ENQUIRE_LINK requests",
+    )
+
     internalNotes = models.TextField(null=True, blank=True)
 
     isDeleted = models.BooleanField(default=False)
@@ -126,3 +161,35 @@ class IpWhitelist(models.Model):
 
     def __str__(self):
         return f"{self.client.name} - {self.ip}"
+
+
+class PuskarClient(models.Model):
+
+    name = models.CharField(max_length=255)
+
+    DsmppUsername = models.CharField(max_length=255)
+    FsmppUsername = models.CharField(max_length=255)
+    smppPassword = models.CharField(max_length=255)
+
+    isDeleted = models.BooleanField(default=False)
+    createdBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="puskarclient_created",
+    )
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="puskarclient_updated",
+    )
+    updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updatedAt"]
+        db_table = "squadServices_puskar_client"  # Add this line
+
+    def __str__(self):
+        return self.name

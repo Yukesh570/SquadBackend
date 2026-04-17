@@ -2,6 +2,7 @@
 from ast import If
 import asyncio
 from csv import writer
+import hashlib
 import math
 import struct
 import logging
@@ -30,6 +31,7 @@ from squadServices.models.transaction.transaction import (
 )
 import uuid
 import redis.asyncio as redis
+from channels.layers import get_channel_layer
 
 # from squadServices.models.transaction import transaction
 
@@ -190,6 +192,9 @@ class Command(BaseCommand):
     # The moment an external client (like another SMPP server or SMS gateway) connects to your port
 
     async def run_server(self):
+
+        # 🧹 Reset everyone to OFFLINE on server boot to prevent Zombies
+        await sync_to_async(Client.objects.all().update)(bindStatus="OFFLINE")
         # ⚡️ Using DB=1 keeps our SMPP buffer strictly separated from Celery (DB=0)
         self.redis_client = redis.Redis(
             host="localhost", port=6379, db=1, decode_responses=True
@@ -287,6 +292,21 @@ class Command(BaseCommand):
                         # writer.smpp_obj = smpp_obj
                         system_id_logged_in = system_id
                         self.active_clients[system_id] = writer
+                        # 🟢 ADD THIS: Flip the database switch to ONLINE
+                        client_obj.bindStatus = "ONLINE"
+                        await sync_to_async(client_obj.save)(
+                            update_fields=["bindStatus"]
+                        )
+                        # 🚀 BROADCAST ONLINE STATUS TO FRONTEND
+                        channel_layer = get_channel_layer()
+                        await channel_layer.group_send(
+                            "dashboard_updates",
+                            {
+                                "type": "status_change",  # This triggers the status_change function in consumers.py!
+                                "username": system_id_logged_in,
+                                "status": "ONLINE",
+                            },
+                        )
                         resp_body = system_id.encode("ascii") + b"\0"
                         await self.send_pdu(
                             writer,
@@ -367,6 +387,23 @@ class Command(BaseCommand):
             # --- 5. REMOVE THEM WHEN THEY DISCONNECT ---
             if system_id_logged_in and system_id_logged_in in self.active_clients:
                 del self.active_clients[system_id_logged_in]
+
+            # 🔴 ADD THIS: Flip the database switch back to OFFLINE
+            client_obj = getattr(writer, "client_obj", None)
+            if client_obj:
+                client_obj.bindStatus = "OFFLINE"
+                # Use sync_to_async to safely hit the database when they drop
+                await sync_to_async(client_obj.save)(update_fields=["bindStatus"])
+                channel_layer = get_channel_layer()
+                await channel_layer.group_send(
+                    "dashboard_updates",
+                    {
+                        "type": "status_change",
+                        "username": system_id_logged_in,
+                        "status": "OFFLINE",
+                    },
+                )
+                logger.info(f"{system_id_logged_in} went OFFLINE.")
             writer.close()
             await writer.wait_closed()
 
@@ -510,6 +547,8 @@ class Command(BaseCommand):
                 segments=total_segments,
                 ratePerSegment=route_data["client_cost"],
                 amount=route_data["total_client_cost"],
+                chargePolicy=locked_client.invoicePolicy,
+                currency=locked_client.company.currency.name,
                 # balanceSpent=client_obj.usedCredit,
                 balanceSpent=locked_client.usedCredit,
                 description=f"Sent SMS {sms_message_obj.message_id}",
@@ -685,102 +724,146 @@ class Command(BaseCommand):
 
         # Extract the raw bytes first
         raw_short_message = body[offset : offset + sm_length]
-        print("Raw short message bytes:", raw_short_message)
         offset += sm_length
-
+        sar_ref_num = None
+        sar_total_parts = None
+        sar_part_num = None
+        # --- UPGRADED TLV PARSING LOOP (Catches SAR) ---
         while offset < len(body):
             if len(body) - offset < 4:
-                break
+                logger.warning("Rejected: Malformed TLV structure.")
+                await self.send_error_with_tlv(writer, seq_num, "INVALID_TLV")
+                return None
+            # Opening the Box
             tlv_tag, tlv_len = struct.unpack(">HH", body[offset : offset + 4])
             offset += 4
             tlv_value = body[offset : offset + tlv_len]
             offset += tlv_len
 
+            # Normally, SMPP puts the text message in the short_message field.
+            # But if the text is massive, clients leave short_message blank and
+            # stuff the entire text into this optional TLV tag instead.
             if tlv_tag == 0x0424:
+                print("==========", raw_short_message)
+                print("📦 Detected TLV 0x0424: This message is using the giant message")
                 raw_short_message = tlv_value
                 logger.info(
                     f"📦 Found giant message in TLV! Size: {len(raw_short_message)} bytes"
                 )
+            elif tlv_tag == 0x020C:  # sar_msg_ref_num(SAR Reference Number)
+                sar_ref_num = struct.unpack(">H", tlv_value)[0]
+            elif tlv_tag == 0x020E:  # sar_total_segments(SAR Total Segments)
+                sar_total_parts = struct.unpack(">B", tlv_value)[0]
+            elif tlv_tag == 0x020F:  # sar_segment_seqnum(SAR Part Number)
+                sar_part_num = struct.unpack(">B", tlv_value)[0]
         # ---------------------------------- if message is coming in as a multi-part message ---------------------------------------------
-        is_multipart = (esm_class & 0x40) > 0
+
+        # -------------------------------------------------------------------------
+        # ⚡️ THE UNIVERSAL REASSEMBLER (UDH & SAR CONSISTENCY CHECK)
+        # -------------------------------------------------------------------------
+        is_multipart_udh = (
+            esm_class & 0x40
+        ) > 0  # UDH (User Data Header): The instructions are mixed directly into the text bytes.
+        is_multipart_sar = (
+            sar_total_parts is not None and sar_total_parts > 1
+        )  # SAR (Segmentation and Reassembly): The instructions are attached at the end of the message as extra tags (TLVs).
         ref_num = None
         total_parts = 1
         part_num = 1
+        is_multipart = False
 
-        if is_multipart:
+        if is_multipart_udh:
+            # 1. Extract UDH
             udh_length = raw_short_message[0]
             udh_bytes = raw_short_message[: udh_length + 1]
             raw_short_message = raw_short_message[udh_length + 1 :]
 
-            if udh_length == 5 and udh_bytes[1] == 0x00:
+            if udh_length == 5 and udh_bytes[1] == 0x00:  # 8-bit ref
                 ref_num = udh_bytes[3]
                 total_parts = udh_bytes[4]
                 part_num = udh_bytes[5]
-
-                # 1. Decode just this specific chunk
-                if data_coding == 8:
-                    chunk_text = raw_short_message.decode(
-                        "utf-16-be", errors="ignore"
-                    ).replace("\x00", "")
-                else:
-                    chunk_text = raw_short_message.decode(
-                        "utf-8", errors="ignore"
-                    ).replace("\x00", "")
-
-                # 2. Park it in the Waiting Room
-                await self.save_to_buffer(
-                    client_obj.smppUsername,
-                    destination_addr,
-                    ref_num,
-                    total_parts,
-                    part_num,
-                    chunk_text,
+            elif udh_length == 6 and udh_bytes[1] == 0x08:  # 16-bit ref
+                ref_num = struct.unpack(">H", udh_bytes[3:5])[0]
+                total_parts = udh_bytes[5]
+                part_num = udh_bytes[6]
+            if total_parts == 0 or part_num == 0 or part_num > total_parts:
+                logger.warning(
+                    f"Rejected: Invalid UDH (Part {part_num} of {total_parts})"
                 )
-                print(
-                    f"📦 Parked Part {part_num} of {total_parts} in Waiting Room (Ref: {ref_num})"
+                await self.send_error_with_tlv(writer, seq_num, "INVALID_UDH")
+                return None
+
+            # UDH / SAR Conflict Guard
+            # Some poorly programmed clients will accidentally send both UDH and SAR instructions,
+            # and sometimes they contradict each other (e.g., UDH says "this is a 3-part message",
+            # but SAR says "this is a 5-part message").
+            if is_multipart_sar and (
+                sar_total_parts != total_parts or sar_part_num != part_num
+            ):
+                logger.warning(
+                    f"Rejected: Client sent conflicting UDH and SAR instructions."
+                )
+                await self.send_error_with_tlv(
+                    writer, seq_num, error_msg="Protocol Error: UDH and SAR mismatch."
+                )
+                return None
+            is_multipart = True
+        elif is_multipart_sar:
+            # 2. Use SAR if UDH isn't present
+            ref_num = sar_ref_num
+            total_parts = sar_total_parts
+            part_num = sar_part_num
+            is_multipart = True
+
+        if is_multipart:
+            # 1. Decode just this specific chunk
+            if data_coding == 8:
+                chunk_text = raw_short_message.decode(
+                    "utf-16-be", errors="ignore"
+                ).replace("\x00", "")
+            else:
+                chunk_text = raw_short_message.decode("utf-8", errors="ignore").replace(
+                    "\x00", ""
                 )
 
-                # 3. Check if we have all the pieces
-                buffered_parts = await self.get_buffered_parts(
-                    client_obj.smppUsername, destination_addr, ref_num
+            # 2. Park it in the Waiting Room
+            await self.save_to_buffer(
+                client_obj.smppUsername,
+                destination_addr,
+                ref_num,
+                total_parts,
+                part_num,
+                chunk_text,
+            )
+            print(
+                f"📦 Parked Part {part_num} of {total_parts} in Waiting Room (Ref: {ref_num})"
+            )
+
+            # 3. Check if we have all the pieces
+            buffered_parts = await self.get_buffered_parts(
+                client_obj.smppUsername, destination_addr, ref_num
+            )
+
+            if len(buffered_parts) < total_parts:
+                # ⚠️ WE ARE STILL WAITING FOR MORE PARTS!
+                temp_msg_id = await self.generate_message_id()
+                resp_body = temp_msg_id.encode("ascii") + b"\0"
+                await self.send_pdu(
+                    writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
                 )
+                return temp_msg_id
 
-                if len(buffered_parts) < total_parts:
-                    # ⚠️ WE ARE STILL WAITING FOR MORE PARTS!
-                    # Return a success to the client so they keep sending, but STOP processing this specific packet.
-                    temp_msg_id = await self.generate_message_id()
-                    resp_body = temp_msg_id.encode("ascii") + b"\0"
-                    await self.send_pdu(
-                        writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
-                    )
-                    return temp_msg_id
+            # 🎉 GRAND FINALE: ALL PARTS HAVE ARRIVED!
+            print(f"✅ All {total_parts} parts received! Stitching message together...")
 
-                # 🎉 GRAND FINALE: ALL PARTS HAVE ARRIVED!
-                print(
-                    f"✅ All {total_parts} parts received! Stitching message together..."
-                )
+            # 4. Clean out the waiting room
+            await self.clear_buffer(client_obj.smppUsername, destination_addr, ref_num)
 
-                # 4. Stitch the text together (they are already ordered by part_num from the DB query)
-                print(
-                    f"✅ All {total_parts} parts received! Stitching message together..."
-                )
-                # 5. Clean out the waiting room
-                await self.clear_buffer(
-                    client_obj.smppUsername, destination_addr, ref_num
-                )
-                short_message = "".join([p.text_chunk for p in buffered_parts])
+            # 5. Stitch the text together
+            short_message = "".join([p.text_chunk for p in buffered_parts])
+            is_multipart = False  # Turn this off so it behaves like a normal message
+            ref_num = None  # Wipe the client's reference number!
 
-                # 6. Override the variables so the rest of the script treats this as one giant normal message
-
-                # encoding_type = self.detect_encoding(short_message)
-                # total_segments, total_chars = self.calculate_segments(
-                #     short_message, encoding_type
-                # )
-
-                is_multipart = (
-                    False  # Turn this off so it behaves like a normal message
-                )
-                ref_num = None  # Wipe the client's reference number!
         else:
             # If it's a normal, single-part message, handle it normally
             if data_coding == 8:
@@ -791,11 +874,6 @@ class Command(BaseCommand):
                 short_message = raw_short_message.decode(
                     "utf-8", errors="ignore"
                 ).replace("\x00", "")
-
-            # encoding_type = self.detect_encoding(short_message)
-            # total_segments, total_chars = self.calculate_segments(
-            #     short_message, encoding_type
-            # )
 
         # --------------------------------END REASSEMBLER ENGINE ---------------------------------------------
 
@@ -840,6 +918,32 @@ class Command(BaseCommand):
                 error_msg=f"Message too long. Max segments allowed: {MAX_ALLOWED_SEGMENTS}.",
             )
             return None
+        # ------------------------------------------------------------------
+        # ⚡️ GUARD 4: Duplicate Message Prevention (60-Second Cooldown)
+        # ------------------------------------------------------------------
+        # 1. Create a unique digital fingerprint of the text message
+        # text_signature = hashlib.md5(short_message.encode("utf-8")).hexdigest()
+
+        # # 2. Create a Redis key tying the Client, the MSISDN, and the Fingerprint together
+        # dedup_key = (
+        #     f"smpp:dedup:{client_obj.smppUsername}:{destination_addr}:{text_signature}"
+        # )
+
+        # # 3. Ask Redis to save this key for 60 seconds.
+        # # nx=True means "Only save this if it DOES NOT already exist."
+        # is_new_message = await self.redis_client.set(dedup_key, "1", nx=True, ex=60)
+
+        # if not is_new_message:
+        #     logger.warning(
+        #         f"Rejected: Duplicate message detected from {client_obj.smppUsername} to {destination_addr}."
+        #     )
+        #     await self.send_error_with_tlv(
+        #         writer,
+        #         seq_num,
+        #         error_msg="Duplicate Message. Please wait 60 seconds before resending.",
+        #     )
+        #     return None
+        # ------------------------------------------------------------------
         final_concat_ref = None
         concat_ref = None
         if final_total_parts > 1:
@@ -1016,7 +1120,7 @@ class Command(BaseCommand):
             .filter(
                 sendClientDlr=True,
                 clientDlrPushed=False,
-                status__in=["delivered", "failed", "partially_delivered"],
+                status__in=["delivered", "failed"],
             )[:50]
         )
 
@@ -1089,11 +1193,7 @@ class Command(BaseCommand):
         done_date = timezone.now().strftime("%y%m%d%H%M%S")
 
         # 2. Map standard DB status to Telecom Status
-        stat_map = {
-            "delivered": "DELIVRD",
-            "failed": "REJECTD",
-            "partially_delivered": "DELIVRD",
-        }
+        stat_map = {"delivered": "DELIVRD", "failed": "REJECTD"}
         smpp_stat = stat_map.get(msg_obj.status, "UNKNOWN")
 
         # 3. Create the DLR text string
