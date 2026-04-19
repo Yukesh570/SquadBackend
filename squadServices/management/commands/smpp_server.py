@@ -4,6 +4,7 @@ import asyncio
 from csv import writer
 import hashlib
 import math
+import os
 import struct
 import logging
 from django.core.management.base import BaseCommand
@@ -195,9 +196,10 @@ class Command(BaseCommand):
 
         # 🧹 Reset everyone to OFFLINE on server boot to prevent Zombies
         await sync_to_async(Client.objects.all().update)(bindStatus="OFFLINE")
+        redis_host = os.environ.get("REDIS_HOST", "redis")
         # ⚡️ Using DB=1 keeps our SMPP buffer strictly separated from Celery (DB=0)
         self.redis_client = redis.Redis(
-            host="localhost", port=6379, db=1, decode_responses=True
+            host=redis_host, port=6379, db=1, decode_responses=True
         )
         server = await asyncio.start_server(self.handle_client, HOST, PORT)
         # --- 2. START THE BACKGROUND LOOP HERE ---
