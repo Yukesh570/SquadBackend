@@ -271,9 +271,6 @@ class Command(BaseCommand):
                         # Optionally skip sending the DLR since the message failed
                         return
 
-                    print(response.status_code)
-                    print(response.json())
-
                     # Send Success DLR (only once for the whole message)
                     await self.send_dlr(
                         writer,
