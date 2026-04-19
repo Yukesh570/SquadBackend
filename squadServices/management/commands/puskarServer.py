@@ -8,7 +8,7 @@ from asgiref.sync import sync_to_async
 from django.db.models import Q
 import requests
 
-from squadServices.models.clientModel.client import Client
+from squadServices.models.clientModel.client import Client, PuskarClient
 
 # Configuration
 HOST = "0.0.0.0"
@@ -81,7 +81,7 @@ class Command(BaseCommand):
         print(f"Authenticating client: {username}")
         print(f"Password provided: {password}")
         try:
-            client = Client.objects.filter(
+            client = PuskarClient.objects.filter(
                 (Q(DsmppUsername=username) | Q(FsmppUsername=username)),
                 smppPassword=password,
                 isDeleted=False,
