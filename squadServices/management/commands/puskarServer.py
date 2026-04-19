@@ -95,7 +95,6 @@ class Command(BaseCommand):
                 return None
 
             # ⚡️ 2. Now it is safe to check the status if you need to
-            clientStatus = client.status
 
             return client
 
