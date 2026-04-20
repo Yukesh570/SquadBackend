@@ -859,4 +859,9 @@ def process_campaign_contacts_task(
     finally:
         # CLEANUP: Delete the temp file so your server doesn't bloat
         if file_path and default_storage.exists(file_path):
+            try:
+                if "file_obj" in locals():
+                    file_obj.close()
+            except Exception:
+                pass
             default_storage.delete(file_path)
