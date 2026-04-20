@@ -4,28 +4,11 @@ from typing import Tuple, Optional
 
 
 class PhoneNumberHandler:
-    # Common country codes mapping
-    COUNTRY_CODES = {
-        "1": "US",  # USA/Canada
-        "44": "GB",  # UK
-        "91": "IN",  # India
-        "61": "AU",  # Australia
-        "86": "CN",  # China
-        "49": "DE",  # Germany
-        "33": "FR",  # France
-        "81": "JP",  # Japan
-        "7": "RU",  # Russia/Kazakhstan
-        "52": "MX",  # Mexico
-        "55": "BR",  # Brazil
-        "34": "ES",  # Spain
-        "39": "IT",  # Italy
-        "82": "KR",  # South Korea
-    }
 
     @staticmethod
-    def normalize(number: str, default_country: str = "US") -> str:
+    def normalize(number: str) -> str:
         """
-        Normalize phone number by removing spaces, +, 00 and formatting consistently
+        Normalize phone number by removing spaces, brackets, and handling '00' international prefix.
         """
         if not number:
             return ""
@@ -33,21 +16,9 @@ class PhoneNumberHandler:
         # Remove all non-digit characters except +
         number = re.sub(r"[^\d+]", "", number.strip())
 
-        # Handle 00 prefix (international)
+        # Handle European/Asian 00 prefix (international)
         if number.startswith("00"):
             number = "+" + number[2:]
-
-        # Ensure + prefix for international
-        if not number.startswith("+"):
-            # Check if it might be international without +
-            if len(number) > 10:  # Suspiciously long for local
-                # Try to detect country code
-                for code in sorted(
-                    PhoneNumberHandler.COUNTRY_CODES.keys(), key=len, reverse=True
-                ):
-                    if number.startswith(code):
-                        number = "+" + number
-                        break
 
         return number
 
@@ -57,28 +28,29 @@ class PhoneNumberHandler:
         Validate phone number and return (is_valid, normalized_number, error_message)
         """
         try:
-            # Normalize first
+            # 1. Strip spaces and letters
             normalized = PhoneNumberHandler.normalize(number)
+            parsed = None
 
-            # Parse the number
+            # 2. Try parsing it exactly as it arrived
             if normalized.startswith("+"):
                 parsed = phonenumbers.parse(normalized, None)
             else:
-                # Use default country if provided, else try to detect
-                if not country:
-                    # Try to detect from first digits
-                    for code, cntry in PhoneNumberHandler.COUNTRY_CODES.items():
-                        if normalized.startswith(code):
-                            country = cntry
-                            break
-                parsed = phonenumbers.parse(normalized, country or "US")
+                # Try parsing it as a local number for the default country (e.g., US)
+                try:
+                    parsed = phonenumbers.parse(normalized, country or "US")
+                    if not phonenumbers.is_valid_number(parsed):
+                        raise ValueError("Invalid local number")
+                except Exception:
+                    # ⚡️ THE MAGIC FIX: It failed as a local number, so let's assume
+                    # the user uploaded an international number but forgot the '+' sign!
+                    try:
+                        parsed = phonenumbers.parse("+" + normalized, None)
+                    except Exception as e:
+                        return False, normalized, f"Could not parse: {str(e)}"
 
-            # Validate
-            if phonenumbers.is_valid_number(parsed):
-                # Format in international format
-                international = phonenumbers.format_number(
-                    parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL
-                )
+            # 3. Final Validation Check
+            if parsed and phonenumbers.is_valid_number(parsed):
                 e164 = phonenumbers.format_number(
                     parsed, phonenumbers.PhoneNumberFormat.E164
                 )
@@ -92,43 +64,37 @@ class PhoneNumberHandler:
     @staticmethod
     def extract_country_code(number: str) -> Tuple[Optional[str], str]:
         """
-        Extract country code from number
+        Extract country code from number cleanly using the Google library.
         Returns (country_code, remaining_number)
         """
-        normalized = PhoneNumberHandler.normalize(number)
+        # Let our smart validate function figure out the actual number first
+        is_valid, e164, _ = PhoneNumberHandler.validate(number)
 
-        if normalized.startswith("+"):
-            # Match longest possible country code first
-            for i in range(1, 4):  # Country codes are 1-3 digits
-                if i <= len(normalized) - 1:
-                    potential_code = normalized[1 : i + 1]
-                    if potential_code in PhoneNumberHandler.COUNTRY_CODES:
-                        return potential_code, normalized[i + 1 :]
+        if is_valid:
+            # Parse the clean + format
+            parsed = phonenumbers.parse(e164, None)
+            return str(parsed.country_code), str(parsed.national_number)
 
+        # If it's a totally invalid number, just return the raw digits
+        normalized = PhoneNumberHandler.normalize(number).replace("+", "")
         return None, normalized
 
     @staticmethod
     def format_pretty(number: str, country: Optional[str] = None) -> str:
         """Format number in a human-readable way"""
-        try:
-            if number.startswith("+"):
-                parsed = phonenumbers.parse(number, None)
-            else:
-                parsed = phonenumbers.parse(number, country or "US")
-
-            if phonenumbers.is_valid_number(parsed):
-                return phonenumbers.format_number(
-                    parsed, phonenumbers.PhoneNumberFormat.NATIONAL
-                )
-            return number
-        except:
-            return number
+        is_valid, e164, _ = PhoneNumberHandler.validate(number, country)
+        if is_valid:
+            parsed = phonenumbers.parse(e164, None)
+            return phonenumbers.format_number(
+                parsed, phonenumbers.PhoneNumberFormat.NATIONAL
+            )
+        return number
 
 
 # Convenience functions
-def normalize_phone(number: str, default_country: str = "US") -> str:
+def normalize_phone(number: str) -> str:
     """Quick normalize function"""
-    return PhoneNumberHandler.normalize(number, default_country)
+    return PhoneNumberHandler.normalize(number)
 
 
 def validate_phone(number: str, country: Optional[str] = None) -> bool:
