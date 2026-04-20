@@ -31,6 +31,7 @@ from squadServices.serializer.campaignSerializer import (
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 from rest_framework.exceptions import ValidationError
+from django.core.files.storage import default_storage
 
 
 def is_valid_contact(contact):
