@@ -2,20 +2,23 @@ import asyncio
 import struct
 import logging
 import datetime
-from django.core.management.base import BaseCommand
+import time
 import uuid
+import aiohttp
+from django.core.management.base import BaseCommand
 from asgiref.sync import sync_to_async
 from django.db.models import Q
-import requests
 
+# Replace this with your actual app import
 from squadServices.models.clientModel.client import Client, PuskarClient
 
-# Configuration
+# --- Configuration ---
 HOST = "0.0.0.0"
 PORT = 2776
 HOST1 = "0.0.0.0"
 PORT1 = 2777
-# SMPP Command IDs
+
+# --- SMPP Command IDs ---
 CMD_BIND_TRANSCEIVER = 0x00000009
 CMD_BIND_TRANSCEIVER_RESP = 0x80000009
 CMD_SUBMIT_SM = 0x00000004
@@ -24,62 +27,77 @@ CMD_DELIVER_SM = 0x00000005
 CMD_ENQUIRE_LINK = 0x00000015
 CMD_ENQUIRE_LINK_RESP = 0x80000015
 
-# SMPP Status
+# --- SMPP Status ---
 ESME_ROK = 0x00000000
-mainStatus = "delivered"
+
+# Logging Setup
 logger = logging.getLogger(__name__)
-clientdata = None
-message_id = 0
-
-
-def callApi(sms_text, destination, source, client_dlr_status):
-    print("===============================================")
-    if client_dlr_status == "DELIVRD":
-        api = "https://boss.arssapp.com/sms_test/api/sms/deliverAdd"
-    else:
-        api = "https://boss.arssapp.com/sms_test/api/sms/deliveryFailedAdd"
-
-    print("sms_text", sms_text)
-    print("destination", destination)
-    print("source", source)
-    payload = {"messageContent": sms_text, "toUser": destination, "userID": source.id}
-    res = requests.post(api, json=payload)
-    print(
-        "============== res.status_code=================================",
-        res.status_code,
-    )
-
-    print("API Response:", res.status_code, res.text)
-    return res
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 class Command(BaseCommand):
-    help = "SMPP Server: Collects all segments then prints full SMS and sends DLR"
+    help = "High-Performance SMPP Server with Async HTTP and Memory Management"
 
     # In-memory store for concatenated messages
-    # Structure: { ref_num: { "total": int, "parts": { part_num: text }, "source": str, "dest": str } }
+    # Structure: { ref_num: { "total": int, "parts": { part_num: text }, "source": str, "dest": str, "timestamp": float } }
     message_store = {}
 
-    async def generate_message_id(self):  # If it has 'async'
-        return str(uuid.uuid4())
+    # Expiration time for incomplete segmented messages (in seconds)
+    MESSAGE_TIMEOUT = 300
 
     def handle(self, *args, **kwargs):
-        self.stdout.write(
-            self.style.SUCCESS(f"Starting SMPP Server on {HOST}:{PORT}...")
-        )
+        self.stdout.write(self.style.SUCCESS(f"Starting SMPP Server..."))
         try:
             asyncio.run(self.run_server())
         except KeyboardInterrupt:
-            self.stdout.write(self.style.WARNING("\nServer stopped."))
+            self.stdout.write(self.style.WARNING("\nServer stopped gracefully."))
+
+    async def generate_message_id(self):
+        return str(uuid.uuid4())
+
+    async def run_server(self):
+        # 1. Initialize a persistent HTTP connection pool (Limit concurrent connections to protect target API)
+        connector = aiohttp.TCPConnector(limit=500)
+        self.http_session = aiohttp.ClientSession(connector=connector)
+
+        # 2. Start the background memory cleanup task
+        cleanup_task = asyncio.create_task(self.cleanup_stale_messages())
+
+        # 3. Start the SMPP Listeners
+        server1 = await asyncio.start_server(self.handle_client, HOST, PORT)
+        self.stdout.write(f"Server 1 listening on {HOST}:{PORT}")
+
+        server2 = await asyncio.start_server(self.handle_client, HOST1, PORT1)
+        self.stdout.write(f"Server 2 listening on {HOST1}:{PORT1}")
+
+        try:
+            async with server1, server2:
+                await asyncio.gather(server1.serve_forever(), server2.serve_forever())
+        finally:
+            # 4. Graceful shutdown
+            cleanup_task.cancel()
+            await self.http_session.close()
+
+    async def cleanup_stale_messages(self):
+        """Background task to remove incomplete segmented messages to prevent memory leaks."""
+        while True:
+            await asyncio.sleep(60)  # Run every 60 seconds
+            current_time = time.time()
+            stale_refs = []
+
+            for ref, data in self.message_store.items():
+                if current_time - data["timestamp"] > self.MESSAGE_TIMEOUT:
+                    stale_refs.append(ref)
+
+            for ref in stale_refs:
+                logger.warning(f"Dropping stale message segments for Ref: {ref}")
+                del self.message_store[ref]
 
     @sync_to_async
     def authenticate_client(self, username, password):
-        """
-        Strictly handles authentication. We don't route yet because
-        we don't know the destination number until the SUBMIT_SM command!
-        """
-        print(f"Authenticating client: {username}")
-        print(f"Password provided: {password}")
+        """Strictly handles authentication via Django ORM."""
         try:
             client = PuskarClient.objects.filter(
                 (Q(DsmppUsername=username) | Q(FsmppUsername=username)),
@@ -87,39 +105,58 @@ class Command(BaseCommand):
                 isDeleted=False,
             ).first()
 
-            # ⚡️ 1. First, check if the client actually exists!
             if not client:
                 logger.warning(
                     f"Auth Failed: Invalid credentials or deleted account for '{username}'."
                 )
                 return None
 
-            # ⚡️ 2. Now it is safe to check the status if you need to
-
             return client
-
         except Exception as e:
             logger.error(f"Auth Lookup Error for '{username}': {e}")
             return None
 
-    async def run_server(self):
-        server1 = await asyncio.start_server(self.handle_client, HOST, PORT)
-        self.stdout.write(f"Server 1 listening on {HOST}:2776")
-        server2 = await asyncio.start_server(self.handle_client, HOST1, PORT1)
-        self.stdout.write(f"Server 2 listening on {HOST1}:2777")
-        async with server1, server2:
-            await asyncio.gather(server1.serve_forever(), server2.serve_forever())
+    async def callApi(self, sms_text, destination, source, client_dlr_status):
+        """Sends the HTTP webhook using the persistent aiohttp session."""
+        if client_dlr_status == "DELIVRD":
+            api = "https://boss.arssapp.com/sms_test/api/sms/deliverAdd"
+        else:
+            api = "https://boss.arssapp.com/sms_test/api/sms/deliveryFailedAdd"
+
+        payload = {
+            "messageContent": sms_text,
+            "toUser": destination,
+            "userID": source.id,
+        }
+
+        try:
+            async with self.http_session.post(api, json=payload) as res:
+                await res.read()  # Read the response to free the connection back to the pool
+
+                # Mock response object for compatibility with existing logic
+                class DummyResponse:
+                    status_code = res.status
+
+                return DummyResponse()
+
+        except Exception as e:
+            logger.error(f"Webhook Delivery Failed: {e}")
+
+            class DummyResponse:
+                status_code = 500
+
+            return DummyResponse()
 
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info("peername")
-        logger.info(f"New connection from {addr}")
-        is_authenticated = False
-        # 1. Get the Client's IP Address
-        client_addr = writer.get_extra_info("peername")
-
-        # 2. ⚡️ Get the SERVER's Port that the client connected to!
         server_info = writer.get_extra_info("sockname")
-        server_port = server_info[1]  # This will be 2776 or 2777
+        server_port = server_info[1]
+
+        logger.info(f"New connection from {addr} on port {server_port}")
+
+        is_authenticated = False
+        clientdata = None
+
         if server_port == 2776:
             client_dlr_status = "DELIVRD"
         elif server_port == 2777:
@@ -142,8 +179,10 @@ class Command(BaseCommand):
                 if cmd_id == CMD_BIND_TRANSCEIVER:
                     system_id, offset = self.read_c_string(body_data, 0)
                     password, offset = self.read_c_string(body_data, offset)
+
                     client_obj = await self.authenticate_client(system_id, password)
                     clientdata = client_obj
+
                     if client_obj:
                         is_authenticated = True
                         logger.info(f"Client bound and authenticated: {system_id}")
@@ -156,7 +195,6 @@ class Command(BaseCommand):
                             resp_body,
                         )
                     else:
-                        # ⚡️ If auth fails, send an error (0x0F) and disconnect them!
                         await self.send_pdu(
                             writer,
                             CMD_BIND_TRANSCEIVER_RESP,
@@ -165,28 +203,18 @@ class Command(BaseCommand):
                             b"\0",
                         )
                         break
-                    logger.info(f"Client authenticated: {system_id}")
-                    logger.info(f"Client bound: {system_id}")
-                    resp_body = system_id.encode("ascii") + b"\0"
-                    await self.send_pdu(
-                        writer, CMD_BIND_TRANSCEIVER_RESP, ESME_ROK, seq_num, resp_body
-                    )
 
                 elif cmd_id == CMD_SUBMIT_SM:
-
                     if not is_authenticated:
                         await self.send_pdu(
                             writer, CMD_SUBMIT_SM_RESP, 0x00000004, seq_num, b""
                         )
                         continue
 
-                    # 1. Parse current PDU
                     sms_info = self.parse_submit_sm(body_data)
-                    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!,${sms_info['text']}")
-                    message_id = await self.generate_message_id()
-                    msg_id_str = message_id
+                    msg_id_str = await self.generate_message_id()
 
-                    # 2. Logic: Is this a fragment or a single message?
+                    # Handle Segmented Messages
                     if sms_info.get("is_segmented"):
                         ref = sms_info["ref_num"]
 
@@ -196,19 +224,18 @@ class Command(BaseCommand):
                                 "parts": {},
                                 "source": sms_info["source"],
                                 "dest": sms_info["dest"],
+                                "timestamp": time.time(),
                             }
 
-                        # Store this specific part
                         self.message_store[ref]["parts"][sms_info["part_num"]] = (
                             sms_info["text"]
                         )
 
-                        # Check if we have received all pieces
                         if (
                             len(self.message_store[ref]["parts"])
                             == self.message_store[ref]["total"]
                         ):
-                            # REASSEMBLE FULL TEXT
+                            # Reassemble
                             full_text = "".join(
                                 [
                                     self.message_store[ref]["parts"][i]
@@ -216,11 +243,9 @@ class Command(BaseCommand):
                                 ]
                             )
                             sms_info["text"] = full_text
-
-                            # Clean memory
-                            del self.message_store[ref]
+                            del self.message_store[ref]  # Clean memory
                         else:
-                            # PARTIAL: Send Submit_SM_Resp (Ack) but NO PRINT and NO DLR
+                            # Send partial ack
                             await self.send_pdu(
                                 writer,
                                 CMD_SUBMIT_SM_RESP,
@@ -228,20 +253,17 @@ class Command(BaseCommand):
                                 seq_num,
                                 msg_id_str.encode() + b"\0",
                             )
-                            logger.info(
+                            logger.debug(
                                 f"Received part {sms_info['part_num']} of {sms_info['total_parts']} (Ref: {ref})"
                             )
                             continue
 
-                    # 3. FINAL ACTION: Message is complete (or was never segmented)
-                    print("\n" + "=" * 40)
-                    print(f"COMPLETE MESSAGE RECEIVED")
-                    print(f"From: {sms_info['source']}")
-                    print(f"To:   {sms_info['dest']}")
-                    print(f"Msg:  {sms_info['text']}")
-                    print("=" * 40 + "\n")
+                    # Message is Complete
+                    logger.info(
+                        f"COMPLETE MESSAGE | From: {sms_info['source']} | To: {sms_info['dest']} | Msg: {sms_info['text']}"
+                    )
 
-                    # Send Response for the final segment
+                    # Send Submit_SM_Resp
                     await self.send_pdu(
                         writer,
                         CMD_SUBMIT_SM_RESP,
@@ -250,28 +272,21 @@ class Command(BaseCommand):
                         msg_id_str.encode() + b"\0",
                     )
 
-                    destination = sms_info["dest"]
-                    sms_text = sms_info["text"]
-                    print(
-                        "data==========messageContent==msg_id_strmsg_id_strmsg_id_strmsg_id_str========",
+                    # Fire API Call concurrently
+                    response = await self.callApi(
+                        sms_info["text"],
+                        sms_info["dest"],
                         clientdata,
+                        client_dlr_status,
                     )
-                    response = callApi(
-                        sms_text, destination, clientdata, client_dlr_status
-                    )
-                    if response.status_code == 406:
-                        print("⚠️ SQUAD SERVER REJECTED MESSAGE: Subscription Expired")
-                        await self.send_pdu(
-                            writer,
-                            CMD_SUBMIT_SM_RESP,
-                            0x00000045,  # ESME_RBINDFAIL or 0x0000000B (Queue Full)
-                            seq_num,
-                            b"\0",
-                        )
-                        # Optionally skip sending the DLR since the message failed
-                        return
 
-                    # Send Success DLR (only once for the whole message)
+                    if response.status_code == 406:
+                        logger.warning(
+                            "SQUAD SERVER REJECTED MESSAGE: Subscription Expired"
+                        )
+                        continue
+
+                    # Send Success DLR
                     await self.send_dlr(
                         writer,
                         sms_info,
@@ -286,10 +301,13 @@ class Command(BaseCommand):
                         writer, CMD_ENQUIRE_LINK_RESP, ESME_ROK, seq_num, b""
                     )
 
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.error(f"Connection Error: {e}")
         finally:
             writer.close()
+            await writer.wait_closed()
 
     def parse_submit_sm(self, body):
         offset = 0
@@ -313,7 +331,6 @@ class Command(BaseCommand):
 
         res = {"source": src, "dest": dst, "is_segmented": False, "text": ""}
 
-        # UDH Check (Bit 6 of esm_class)
         if esm_class & 0x40:
             udh_len = msg_bytes[0]
             if udh_len >= 5 and msg_bytes[1] == 0x00:  # 8-bit reference
@@ -321,17 +338,13 @@ class Command(BaseCommand):
                 res["ref_num"] = msg_bytes[3]
                 res["total_parts"] = msg_bytes[4]
                 res["part_num"] = msg_bytes[5]
-
-            # Text starts after the UDH
             actual_bytes = msg_bytes[udh_len + 1 :]
         else:
             actual_bytes = msg_bytes
 
-        # Decoding
         try:
             if data_coding == 8:
                 res["text"] = actual_bytes.decode("utf-16-be", errors="ignore")
-                print(f"Decoded as UCS2: {res['text']}")
             else:
                 res["text"] = actual_bytes.decode("utf-8", errors="ignore")
         except:
@@ -341,21 +354,12 @@ class Command(BaseCommand):
 
     async def send_dlr(self, writer, sms_info, fullmsg, msg_id, dlr_seq, dlr_status):
         timestamp = datetime.datetime.now().strftime("%y%m%d%H%M")
-        # Clean text for DLR metadata (ASCII only)
-        print("stauts======!!!!!!!!!!!!!!!!!!!!!!!!!!!!=====", mainStatus)
         full_safe_text = sms_info["text"].encode("ascii", "ignore").decode("ascii")
-        if dlr_status == "DELIVRD":
-            dlr_text = (
-                f"id:{msg_id} sub:001 dlvrd:001 submit date:{timestamp} "
-                f"done date:{timestamp} stat:{dlr_status} err:000 text:{full_safe_text} fulltext:{fullmsg}"
-            )
 
+        if dlr_status == "DELIVRD":
+            dlr_text = f"id:{msg_id} sub:001 dlvrd:001 submit date:{timestamp} done date:{timestamp} stat:{dlr_status} err:000 text:{full_safe_text}"
         elif dlr_status == "REJECTD":
-            dlr_text = (
-                f"id:{msg_id} sub:000 dlvrd:000 submit date:{timestamp} "
-                f"done date:{timestamp} stat:{dlr_status} err:001 text:{full_safe_text} fulltext:{fullmsg}"
-            )
-        # ⚡️ INJECT dlr_status INTO THE STRING HERE
+            dlr_text = f"id:{msg_id} sub:000 dlvrd:000 submit date:{timestamp} done date:{timestamp} stat:{dlr_status} err:001 text:{full_safe_text}"
 
         dlr_bytes = dlr_text.encode("ascii", errors="ignore")
 
