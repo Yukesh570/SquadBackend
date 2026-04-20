@@ -78,6 +78,9 @@ class ClientTransaction(models.Model):
     )
     isDeleted = models.BooleanField(default=False)
 
+    class Meta:
+        ordering = ["-createdAt"]
+
     def __str__(self):
         return f"{self.client.name} | {self.transactionType} | Segs: {self.segments} | Amt: {self.amount}"
 
@@ -110,7 +113,7 @@ class VendorTransaction(models.Model):
         choices=POLICY_CHOICES,
         default="ON ATTEMPT",
     )
-    currency = models.CharField(max_length=10, null=True, blank=True)
+    currency = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
     amount = models.DecimalField(max_digits=10, decimal_places=4)
     balanceSpent = models.DecimalField(max_digits=10, decimal_places=4)
@@ -131,6 +134,9 @@ class VendorTransaction(models.Model):
         related_name="vendorTransactionUpdated",
     )
     isDeleted = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-createdAt"]
 
     def __str__(self):
         return f"{self.vendor.profileName} | {self.transactionType} | Segs: {self.segments} | Amt: {self.amount}"

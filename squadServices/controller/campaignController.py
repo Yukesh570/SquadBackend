@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
+from squad.task import process_campaign_contacts_task
 from squad.utils.authenticators import JWTAuthentication
 from django.db import transaction
 from django.utils.dateparse import parse_datetime
@@ -18,7 +19,9 @@ from squadServices.helper.action import (
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.campaign import Campaign, CampaignContact, Template
+from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.notificationModel.notification import Notification
+from squadServices.models.smpp.smppSMS import SMSMessage
 from squadServices.models.users import UserLog
 from squadServices.serializer.campaignSerializer import (
     CampaignContactSerializer,
@@ -99,18 +102,20 @@ class CampaignViewSet(viewsets.ModelViewSet):
         data = request.data.copy()
         name = data.get("name")
         module = self.kwargs.get("module")
-
+        vendor = data.get("vendor")
         check_permission(self, "write", module)
 
         contacts_data = data.pop("contacts", None)
         if isinstance(contacts_data, list) and len(contacts_data) == 1:
             contacts_data = contacts_data[0]
+
         templateId = data.get("template")
         objective = data.get("objective")
         content = data.get("content")
         scheduleValue = data.get("schedule")
         file = request.FILES.get("csvFile")
-        template_instance = None
+
+        # 1. Validate Campaign Name
         existingCampaign = Campaign.objects.filter(name__iexact=name, isDeleted=False)
         if existingCampaign.exists():
             return Response(
@@ -118,129 +123,61 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        template_instance = None
         if templateId:
             template_instance = get_object_or_404(Template, id=templateId)
+
+        # 2. Save the Campaign object instantly
         with transaction.atomic():
-            reponse = Campaign.objects.create(
+            campaign = Campaign.objects.create(
                 template=template_instance,
                 schedule=scheduleValue,
                 objective=objective,
                 content=content,
+                vendor=Vendor.objects.get(id=vendor),
                 name=name,
                 createdBy=self.request.user,
                 updatedBy=self.request.user,
             )
-            serializer = self.get_serializer(reponse)
-            campaignId = reponse.id
-            contactsData = contacts_data
+            serializer = self.get_serializer(campaign)
 
-            campaign = Campaign.objects.get(id=campaignId)
-            # campaign = response
+        # 3. Figure out the text to send
+        message_text = (
+            content
+            if content
+            else (template_instance.content if template_instance else "")
+        )
 
-            createdContacts = []
-            invalidContacts = []
-            duplicateInInput = []
-            seenInputs = set()
+        # 4. Save file temporarily for Celery (if uploaded)
+        file_path = None
+        if file:
+            file_path = default_storage.save(f"tmp/campaigns/{file.name}", file)
 
-            if file:
-                fileName = file.name
-                if fileName.endswith(".csv"):
-                    try:
-                        decodedFile = file.read().decode("utf-8")
-                    except UnicodeDecodeError:
-                        file.seek(0)
-                        decodedFile = file.read().decode("latin1")
-
-                    ioString = io.StringIO(decodedFile)
-                    reader = csv.DictReader(ioString)
-
-                    for row in reader:
-                        row_lower = {k.lower(): v for k, v in row.items()}
-
-                        for contact in row:
-                            contact = row_lower.get("contact", "").strip()
-                            if contact and contact in seenInputs:
-                                duplicateInInput.append(contact)
-                            else:
-                                seenInputs.add(contact)
-                                if is_valid_contact(contact):
-                                    createdContacts.append(
-                                        CampaignContact(
-                                            campaign=campaign, contactNumber=contact
-                                        )
-                                    )
-                                else:
-                                    invalidContacts.append(contact)
-                elif fileName.endswith(".xlsx"):
-                    wb = openpyxl.load_workbook(file)
-                    ws = wb.active
-                    # Assumes column header in the first row
-                    headers = [
-                        str(cell.value).lower()
-                        for cell in next(ws.iter_rows(min_row=1, max_row=1))
-                    ]
-                    contact_idx = (
-                        headers.index("contact") if "contact" in headers else None
-                    )
-                    if contact_idx is not None:
-                        for row in ws.iter_rows(min_row=2):  # skip header
-                            contact = (
-                                str(row[contact_idx].value).strip()
-                                if row[contact_idx].value
-                                else ""
-                            )
-                            if contact and contact in seenInputs:
-                                duplicateInInput.append(contact)
-                            elif contact:
-                                seenInputs.add(contact)
-                                if is_valid_contact(contact):
-                                    createdContacts.append(
-                                        CampaignContact(
-                                            campaign=campaign, contactNumber=contact
-                                        )
-                                    )
-                                else:
-                                    invalidContacts.append(contact)
-            else:
-                contactsData = contactsData
-                if not contactsData:
-                    raise ValidationError(
-                        {"error": "contacts field is required and cannot be empty."}
-                    )
-
-                if contactsData:
-
-                    print("contactsData-------", contactsData)
-                    contacts = [c.strip() for c in contactsData.split(",") if c.strip()]
-
-                    for contact in contacts:
-                        if contact in seenInputs:
-                            duplicateInInput.append(contact)
-                        else:
-                            seenInputs.add(contact)
-                            if is_valid_contact(contact):
-                                createdContacts.append(
-                                    CampaignContact(
-                                        campaign=campaign, contactNumber=contact
-                                    )
-                                )
-                            else:
-                                invalidContacts.append(contact)
-
-            if createdContacts:
-                CampaignContact.objects.bulk_create(createdContacts)
-        createdContactNumbers = [c.contactNumber for c in createdContacts]
+        if not file and not contacts_data:
+            return Response(
+                {"error": "Please provide a file or manual contacts."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        print("vendor!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", vendor)
+        # 5. FIRE AND FORGET: Hand off to Celery
+        process_campaign_contacts_task.delay(
+            campaign_id=campaign.id,
+            file_path=file_path,
+            contacts_string=contacts_data,
+            user_id=self.request.user.id,
+            message_text=message_text,
+            vendor_id=vendor,
+        )
 
         log_action_create(self.request.user, "Campaign", name)
 
+        # 6. Instantly tell the frontend it was a success!
         return Response(
             {
                 "campaign": serializer.data,
-                "created": createdContactNumbers,
-                "invalidContacts": invalidContacts,
-                "duplicateInInput": duplicateInInput,
+                "message": "Campaign created successfully! Contacts are being processed in the background.",
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_202_ACCEPTED,  # 202 is the industry standard for "Accepted and processing in background"
         )
 
 

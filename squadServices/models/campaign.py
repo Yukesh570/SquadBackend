@@ -1,6 +1,7 @@
 from django.db import models
 
 from squad import settings
+from squadServices.models.connectivityModel.verdor import Vendor
 
 
 class objectiveType(models.TextChoices):
@@ -43,7 +44,7 @@ class Campaign(models.Model):
     template = models.ForeignKey(
         Template, on_delete=models.SET_NULL, null=True, blank=True
     )
-
+    vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True)
     schedule = models.DateTimeField(null=True, blank=True)
     isDeleted = models.BooleanField(default=False)
 

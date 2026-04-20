@@ -1,4 +1,5 @@
 from email import errors
+import io
 import os
 from time import time
 from urllib.parse import urljoin
@@ -14,17 +15,24 @@ from django.contrib.auth import get_user_model
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 import json
-
+from django.core.files.storage import default_storage
 from squadServices import models
+from squadServices.models.campaign import CampaignContact
+from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.country import Country
 from squadServices.models.finanace.invoice import ClientInvoice, VendorInvoice
 from squadServices.models.finanace.invoiceSetup import InvoiceSetup
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.operators.operators import Operators
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
+from squadServices.models.transaction.transaction import (
+    TransactionType,
+    VendorTransaction,
+)
 from squadServices.serializer.roleManagementSerializer.vendorRateSerializer import (
     VendorRateImportSerializer,
 )
+from django.db import transaction
 from io import BytesIO
 from django.template.loader import get_template
 from django.core.files.base import ContentFile
@@ -40,6 +48,16 @@ from squadServices.models.company import Company
 from squadServices.models.email import EmailHost
 import uuid
 from django.db.models import Q
+
+
+import math
+import openpyxl
+from django.utils import timezone
+from squadServices.models import Campaign
+from squadServices.models.smpp.smppSMS import SMSMessage
+from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
+from squadServices.helper.checkNumber import clean_phone_number
+from squadServices.helper.smsSplitter import create_message_parts
 
 logger = logging.getLogger(__name__)
 
@@ -613,3 +631,232 @@ def generate_vendorInvoice_pdf_task(
         return f"Successfully generated PDF for Invoice {invoice_obj.invoiceNumber}"
 
     return f"Failed to generate PDF for Invoice {invoice_obj.invoiceNumber}"
+
+
+def is_valid_contact(contact):
+    return contact.isdigit() and 7 <= len(contact) <= 15
+
+
+# Helper function to calculate SMS parts
+def get_encoding_and_segments(text):
+    gsm7_basic = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ\x1bÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"
+    gsm7_ext = "^{}\\[~]|€"
+    encoding = "GSM-7"
+    for char in text:
+        if char not in gsm7_basic and char not in gsm7_ext:
+            encoding = "UCS-2"
+            break
+    length = len(text)
+    if encoding == "GSM-7":
+        segments = 1 if length <= 160 else math.ceil(length / 153)
+    else:
+        segments = 1 if length <= 70 else math.ceil(length / 67)
+    return encoding, segments, length
+
+
+@shared_task
+def process_campaign_contacts_task(
+    campaign_id, file_path, contacts_string, user_id, message_text, vendor_id
+):
+    """
+    Background worker to parse contacts, save them to the Campaign,
+    and queue them up for the Vendor SMPP server.
+    """
+    createdContacts = []
+    invalidContacts = []
+    duplicateInInput = []
+    seenInputs = set()
+
+    try:
+        campaign = Campaign.objects.get(id=campaign_id)
+        user = User.objects.get(id=user_id)
+
+        # ==========================================
+        # 1. PARSE UPLOADED FILE (If exists)
+        # ==========================================
+        if file_path and default_storage.exists(file_path):
+            file_name = file_path.lower()
+            file_obj = default_storage.open(file_path)
+
+            if file_name.endswith(".csv"):
+                try:
+                    decodedFile = file_obj.read().decode("utf-8")
+                except UnicodeDecodeError:
+                    file_obj.seek(0)
+                    decodedFile = file_obj.read().decode("latin1")
+
+                ioString = io.StringIO(decodedFile)
+                reader = csv.DictReader(ioString)
+                for row in reader:
+                    row_lower = {k.lower(): v for k, v in row.items()}
+                    contact = row_lower.get("contact", "").strip()
+                    if contact and contact in seenInputs:
+                        duplicateInInput.append(contact)
+                    elif contact:
+                        seenInputs.add(contact)
+                        if is_valid_contact(contact):
+                            createdContacts.append(
+                                CampaignContact(
+                                    campaign=campaign, contactNumber=contact
+                                )
+                            )
+                        else:
+                            invalidContacts.append(contact)
+
+            elif file_name.endswith(".xlsx"):
+                wb = openpyxl.load_workbook(file_obj)
+                ws = wb.active
+                headers = [
+                    str(cell.value).lower()
+                    for cell in next(ws.iter_rows(min_row=1, max_row=1))
+                ]
+                contact_idx = headers.index("contact") if "contact" in headers else None
+
+                if contact_idx is not None:
+                    for row in ws.iter_rows(min_row=2):
+                        contact = (
+                            str(row[contact_idx].value).strip()
+                            if row[contact_idx].value
+                            else ""
+                        )
+                        if contact and contact in seenInputs:
+                            duplicateInInput.append(contact)
+                        elif contact:
+                            seenInputs.add(contact)
+                            if is_valid_contact(contact):
+                                createdContacts.append(
+                                    CampaignContact(
+                                        campaign=campaign, contactNumber=contact
+                                    )
+                                )
+                            else:
+                                invalidContacts.append(contact)
+
+        # ==========================================
+        # 2. PARSE MANUAL TEXT INPUT (If exists)
+        # ==========================================
+        if contacts_string:
+            print("666666666666666666666666666666666666666666666")
+            contacts = [c.strip() for c in contacts_string.split(",") if c.strip()]
+            print("666666666666666666666666666666666666666666666", contacts)
+
+            for contact in contacts:
+                if contact in seenInputs:
+                    print("666666666666666666666666666666666666666666666", contact)
+
+                    duplicateInInput.append(contact)
+                    print(
+                        "666666666666666666666666666666666666666666666",
+                        duplicateInInput,
+                    )
+
+                else:
+                    seenInputs.add(contact)
+                    print("111111111111111111111111111111111111111111111111", contact)
+
+                    print("111111111111111111111111111111111111111111111111", contact)
+
+                    createdContacts.append(
+                        CampaignContact(campaign=campaign, contactNumber=contact)
+                    )
+
+        # ==========================================
+        # 3. SAVE TO DATABASE & QUEUE SMS
+        # ==========================================
+        if createdContacts:
+            print("55555555555555", contact)
+
+            CampaignContact.objects.bulk_create(createdContacts)
+
+            # Setup Vendor & Encoding logic
+            encoding_type, total_segments, total_chars = get_encoding_and_segments(
+                message_text
+            )
+            default_vendor = (
+                Vendor.objects.filter(id=vendor_id).first() or Vendor.objects.first()
+            )
+            vendorRatePerSegment = VendorRate.objects.filter(
+                ratePlan=default_vendor.ratePlanName
+            ).first()
+            print(
+                "55555555555555",
+                default_vendor,
+                vendorRatePerSegment,
+                encoding_type,
+                total_segments,
+            )
+            total_vendor_cost = vendorRatePerSegment.rate * total_segments
+            print("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww")
+            # Loop to generate SMPP Messages
+            for contact_obj in createdContacts:
+                # Clean it just to be safe for the SMPP server
+                destination_addr = clean_phone_number(
+                    contact_obj.contactNumber
+                ).replace("+", "")
+                print(
+                    f"Queuing SMS to {destination_addr} with encoding {encoding_type} and {total_segments} segments"
+                )
+                unique_msg_id = str(uuid.uuid4())  # Add 'await'
+
+                with transaction.atomic():
+                    # A. Lock the Vendor's Parent Company to prevent race conditions
+                    locked_vendor_company = (
+                        type(default_vendor.company)
+                        .objects.select_for_update()
+                        .get(id=default_vendor.company.id)
+                    )
+
+                    # B. Update the Balance
+                    locked_vendor_company.usedVendorCredit += total_vendor_cost
+                    locked_vendor_company.save(update_fields=["usedVendorCredit"])
+                    parent_msg = SMSMessage.objects.create(
+                        destination=destination_addr,
+                        message_id=unique_msg_id,  # Add 'message_id'
+                        text=message_text,
+                        encoding=encoding_type,
+                        segmentNumber=total_segments,
+                        characterCount=total_chars,
+                        status="queued",
+                        vendor=default_vendor,
+                        smpp=default_vendor.smpp,
+                        client=None,
+                        createdBy=user,
+                        sendClientDlr=False,
+                        queued_at=timezone.now(),
+                    )
+                    VendorTransaction.objects.create(
+                        vendor=default_vendor,
+                        message=parent_msg,
+                        transactionType=TransactionType.DEDUCTION,
+                        segments=total_segments,
+                        ratePerSegment=vendorRatePerSegment.rate,
+                        amount=total_vendor_cost,
+                        balanceSpent=locked_vendor_company.usedVendorCredit,
+                        description=f"System Campaign - Routing charge for SMS {parent_msg.message_id}",
+                    )
+
+                create_message_parts(parent_msg, message_text)
+
+                DetailedSMSReport.objects.create(
+                    message=parent_msg,
+                    text_message_id=parent_msg.message_id or f"queued-{parent_msg.id}",
+                    text=parent_msg.text,
+                    part_total=total_segments,
+                    client="SYSTEM_CAMPAIGN",
+                    clientRate=0.00,
+                    client_charge=0.00,
+                    vendor=default_vendor.profileName if default_vendor else "Unknown",
+                    vendorRate=vendorRatePerSegment.rate,
+                    vendor_charge=total_vendor_cost,
+                    submitStatus="QUEUED",
+                    request_time=parent_msg.createdAt,
+                    destination=parent_msg.destination,
+                )
+
+    except Exception as e:
+        print(f"🔥 Task Failed for Campaign {campaign_id}: {str(e)}")
+
+    finally:
+        # CLEANUP: Delete the temp file so your server doesn't bloat
+        if file_path and default_storage.exists(file_path):
+            default_storage.delete(file_path)

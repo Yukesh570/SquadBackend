@@ -13,6 +13,7 @@ class VendorSerializer(serializers.ModelSerializer):
             "id",
             "company",
             "companyName",
+            "ratePlanName",
             "profileName",
             "invoicePolicy",
             "smpp",
