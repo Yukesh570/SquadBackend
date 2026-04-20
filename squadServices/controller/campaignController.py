@@ -143,11 +143,12 @@ class CampaignViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(campaign)
 
         # 3. Figure out the text to send
-        message_text = (
-            content
-            if content
-            else (template_instance.content if template_instance else "")
-        )
+        # message_text = (
+        #     content
+        #     if content
+        #     else (template_instance.content if template_instance else "")
+        # )
+        message_text = content
 
         # 4. Save file temporarily for Celery (if uploaded)
         file_path = None

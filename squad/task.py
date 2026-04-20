@@ -49,7 +49,7 @@ from squadServices.models.email import EmailHost
 import uuid
 from django.db.models import Q
 
-
+import html  # Add this to your imports at the top of the file!
 import math
 import openpyxl
 from django.utils import timezone
@@ -662,6 +662,9 @@ def process_campaign_contacts_task(
     Background worker to parse contacts, save them to the Campaign,
     and queue them up for the Vendor SMPP server.
     """
+    message_text = re.sub(r"<[^>]+>", "", message_text)
+    message_text = html.unescape(message_text).strip()
+
     createdContacts = []
     invalidContacts = []
     duplicateInInput = []
