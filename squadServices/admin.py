@@ -2,12 +2,12 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
 from squadServices.models.campaign import Campaign, CampaignContact, Template
-from squadServices.models.clientModel.client import Client, IpWhitelist
+from squadServices.models.clientModel.client import Client, ClientPolicy, IpWhitelist
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
 from django.utils.html import format_html
 
 from squadServices.models.connectivityModel.smpp import SMPP
-from squadServices.models.connectivityModel.verdor import Vendor
+from squadServices.models.connectivityModel.verdor import Vendor, VendorPolicy
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
 from squadServices.models.detailedReport.detailedReport import DetailedSMSReport
 from squadServices.models.email import EmailHost, EmailTemplate
@@ -1113,6 +1113,129 @@ class MultipartBufferAdmin(admin.ModelAdmin):
     # since this should only be controlled by the SMPP server.
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(VendorPolicy)
+class VendorPolicyAdmin(admin.ModelAdmin):
+    list_display = (
+        "vendor",
+        "rateTps",
+        "sendQueueLimit",
+        "responseTimeout",
+        "logLevel",
+        "isDeleted",
+    )
+    search_fields = (
+        "vendor__profileName",
+        "vendor__name",
+        "tlvTag",
+    )  # Adjust vendor__ fields based on your Vendor model
+    list_filter = ("logLevel", "isDeleted")
+    readonly_fields = ("createdAt", "updatedAt")
+
+    fieldsets = (
+        ("Vendor Assignment", {"fields": ("vendor", "isDeleted")}),
+        (
+            "Number Formatting (TON/NPI)",
+            {
+                "fields": (
+                    "sourceAddrTon",
+                    "sourceAddrNpi",
+                    "destAddrTon",
+                    "destAddrNpi",
+                    "addrTon",
+                    "addrNpi",
+                )
+            },
+        ),
+        (
+            "Speed & Queue Limits",
+            {"fields": ("rateTps", "sendQueueLimit", "delayTime")},
+        ),
+        (
+            "Timeouts & Heartbeats",
+            {"fields": ("responseTimeout", "enquireLinkInterval", "connectionTimeout")},
+        ),
+        (
+            "Retries & Recovery",
+            {
+                "fields": (
+                    "connectionRetryDelay",
+                    "connectionRetryCount",
+                    "bindRetryDelay",
+                    "bindRetryCount",
+                    "connectionRecoveryDelay",
+                )
+            },
+        ),
+        ("Logging & Custom TLVs", {"fields": ("logLevel", "tlvTag", "tlvValue")}),
+        (
+            "Audit Log",
+            {
+                "fields": ("createdBy", "updatedBy", "createdAt", "updatedAt"),
+                "classes": (
+                    "collapse",
+                ),  # Hides these by default to keep the form clean
+            },
+        ),
+    )
+
+
+@admin.register(ClientPolicy)
+class ClientPolicyAdmin(admin.ModelAdmin):
+    # What columns show up on the main list page
+    list_display = (
+        "client",
+        "maxTps",
+        "maxSessions",
+        "maxWindowGlobal",
+        "idleTimeoutSec",
+        "isDeleted",
+    )
+
+    # Allows you to search by the client's name or SMPP username
+    search_fields = ("client__name", "client__smppUsername")
+
+    # Adds a filter sidebar on the right
+    list_filter = ("isDeleted",)
+
+    # Prevents admins from editing the auto-generated timestamps
+    readonly_fields = ("createdAt", "updatedAt")
+
+    # Groups the fields into beautiful sections on the detail page
+    fieldsets = (
+        ("Client Assignment", {"fields": ("client", "isDeleted")}),
+        (
+            "Throughput & Queueing",
+            {
+                "fields": ("maxTps", "maxQueueDepth"),
+                "description": "Limits on how fast the client can send messages and how many can be queued.",
+            },
+        ),
+        (
+            "Session & Window Limits",
+            {
+                "fields": ("maxSessions", "maxWindowPerSession", "maxWindowGlobal"),
+                "description": "Rules for concurrent TCP connections and unacknowledged messages (in-flight).",
+            },
+        ),
+        (
+            "Timeouts",
+            {
+                "fields": ("idleTimeoutSec", "submitTimeoutSec"),
+                "description": "Rules for dropping dead connections and timing out vendor responses.",
+            },
+        ),
+        (
+            "Audit Log",
+            {
+                "fields": ("createdBy", "updatedBy", "createdAt", "updatedAt"),
+                "classes": (
+                    "collapse",
+                ),  # Hides this section by default to keep the UI clean
+            },
+        ),
+    )
 
 
 admin.site.register(CustomRoute, CustomRouteAdmin)

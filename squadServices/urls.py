@@ -15,6 +15,7 @@ from squadServices.controller.campaignController import (
     TemplateViewSet,
 )
 from squadServices.controller.clientController.clientController import (
+    ClientPolicyViewSet,
     ClientViewSet,
     IpWhiteListViewSet,
     PuskarClientViewSet,
@@ -27,7 +28,10 @@ from squadServices.controller.companyController import (
 from squadServices.controller.connnectivity.SMPPController import (
     SMPPViewSet,
 )
-from squadServices.controller.connnectivity.vendorController import VendorViewSet
+from squadServices.controller.connnectivity.vendorController import (
+    VendorPolicyViewSet,
+    VendorViewSet,
+)
 from squadServices.controller.countryController import (
     CountryViewSet,
     CurrencyViewSet,
@@ -375,21 +379,63 @@ urlpatterns = [
         name="client",
     ),
     path(
-        "duplicateClinet/",
-        PuskarClientViewSet.as_view(
-            {
-                "post": "create",
-            }
-        ),
-        name="client",
-    ),
-    path(
         "client/<str:module>/<int:pk>/",
         ClientViewSet.as_view(
             {
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
+            }
+        ),
+        name="client",
+    ),
+    path(
+        "clientPolicy/<str:module>/",
+        ClientPolicyViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="clientPolicy",
+    ),
+    path(
+        "clientPolicy/<str:module>/<int:pk>/",
+        ClientPolicyViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="clientPolicy",
+    ),
+    path(
+        "vendorPolicy/<str:module>/",
+        VendorPolicyViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="vendorPolicy",
+    ),
+    path(
+        "vendorPolicy/<str:module>/<int:pk>/",
+        VendorPolicyViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="vendorPolicy",
+    ),
+    path(
+        "duplicateClinet/",
+        PuskarClientViewSet.as_view(
+            {
+                "post": "create",
             }
         ),
         name="client",

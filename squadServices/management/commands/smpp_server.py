@@ -33,6 +33,7 @@ from squadServices.models.transaction.transaction import (
 import uuid
 import redis.asyncio as redis
 from channels.layers import get_channel_layer
+from logging.handlers import RotatingFileHandler
 
 # from squadServices.models.transaction import transaction
 
@@ -62,13 +63,37 @@ ESME_ROK = 0x00000000
 
 logger = logging.getLogger(__name__)
 
+# --- CREATE A DEDICATED FILE LOGGER FOR SMPP TRAFFIC ---
+# 1. Create a logs folder if it doesn't exist
+if not os.path.exists("logs"):
+    os.makedirs("logs")
 
+# 2. Set up the specific logger
+traffic_logger = logging.getLogger("smpp_traffic")
+traffic_logger.setLevel(logging.INFO)
+traffic_logger.propagate = False  # Prevents these logs from spamming your main console
+
+# 3. Create the Rotating File Handler (Max 5MB per file, keeps 5 backups)
+file_handler = RotatingFileHandler(
+    "logs/smpp_traffic.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+)
+
+# 4. Set the exact format for the file (adds Date and Time automatically!)
+formatter = logging.Formatter("%(asctime)s - [%(levelname)s] - %(message)s")
+file_handler.setFormatter(formatter)
+
+if not traffic_logger.handlers:
+    traffic_logger.addHandler(file_handler)
+
+
+# --------------------------------------------------------
 class Command(BaseCommand):
     help = "Runs a lightweight SMPP Server to receive SMS"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.active_clients = {}  # Dictionary to hold open TCP connections
+        self.route_cache = {}  # ⚡️ ADD THIS
 
     async def generate_message_id(self):  # If it has 'async'
         return str(uuid.uuid4())
@@ -228,6 +253,46 @@ class Command(BaseCommand):
                 # 2. Read Body
                 body_len = cmd_len - 16
                 body_data = await reader.read(body_len) if body_len > 0 else b""
+
+                # =========================================================
+                # ⚡️ THE RAW PACKET LOGS (EXACTLY AS IT HIT THE SERVER)
+                # =========================================================
+                if cmd_id not in [0x00000015, 0x80000015]:  # Ignore Enquire Links
+                    log_entry = [
+                        f"RAW SMPP PACKET FROM {client_ip}",
+                        f"Command   : {hex(cmd_id)} ({'SUBMIT_SM' if cmd_id == 0x4 else 'BIND' if cmd_id == 0x9 else 'OTHER'})",
+                        f"Sequence  : {seq_num}",
+                    ]
+
+                    if cmd_id == 0x00000004:  # If it's a SUBMIT_SM
+                        # 1. Grab the basic strings (Phone numbers) just for quick reference
+                        c_strings = re.findall(b"[^\x00-\x1f\x7f-\xff]{3,}", body_data)
+                        src = (
+                            c_strings[0].decode("ascii", errors="ignore")
+                            if len(c_strings) > 0
+                            else "Unknown"
+                        )
+                        dest = (
+                            c_strings[1].decode("ascii", errors="ignore")
+                            if len(c_strings) > 1
+                            else "Unknown"
+                        )
+
+                        log_entry.append(f"From      : {src}")
+                        log_entry.append(f"To        : {dest}")
+
+                        # 2. ⚡️ THE RAW BYTES
+                        # This prints the pure Python byte string exactly as it arrived
+                        log_entry.append(f"Raw Bytes : {body_data}")
+
+                        # 3. ⚡️ THE HEX DUMP (Standard Telecom Debugging format)
+                        # This formats the bytes into a clean, readable hex string (e.g. 00 05 53 51 55...)
+                        readable_hex = " ".join(f"{b:02X}" for b in body_data)
+                        log_entry.append(f"Raw Hex   : {readable_hex}")
+
+                    # ⚡️ Write the entire block to the logs/smpp_traffic.log file!
+                    traffic_logger.info("\n" + "\n".join(log_entry) + "\n" + "-" * 50)
+                # ==============================================================================
 
                 # 3. Handle BIND Commands
 
@@ -413,8 +478,6 @@ class Command(BaseCommand):
     def get_route_and_potential_cost(
         self, client_obj, destination_number, total_segments
     ):
-
-        # --- 1. DYNAMIC COUNTRY LOOKUP ---
         destination_country = None
         for i in range(4, 0, -1):
             possible_code = destination_number[:i]
@@ -423,22 +486,22 @@ class Command(BaseCommand):
             ).first()
             if destination_country:
                 break
-
         if not destination_country:
             return None, f"Unrecognized Country Code in {destination_number}"
-        print(
-            "========================destination_country===========",
-            destination_country,
-        )
-        print(
-            "==================destination_number=================", destination_number
-        )
+        # --- 2. CHECK THE CACHE (Using the TRUE Country Code) ---
+        # e.g., "client_5_44" or "client_5_57"
+        cache_key = f"{client_obj.id}_{destination_country.countryCode}"
+        if cache_key in self.route_cache:
+            route_data = self.route_cache[cache_key].copy()  # Use cached data!
+        else:
 
-        # --- 2. CALL THE ROUTING ENGINE (No Operator Needed!) ---
-        route_data, error = get_route_and_cost(client_obj, destination_country)
+            # --- 2. CALL THE ROUTING ENGINE (No Operator Needed!) ---
+            route_data, error = get_route_and_cost(client_obj, destination_country)
 
-        if error:
-            return None, error
+            if error:
+                return None, error
+            # Save it to RAM so the next 999 messages to Colombia are instant!
+            self.route_cache[cache_key] = route_data
 
         # Multiply by segments to get true costs!
         total_vendor_cost = route_data["vendor_cost"] * total_segments
@@ -471,18 +534,33 @@ class Command(BaseCommand):
 
         return route_data, None
 
-    @sync_to_async
-    def perform_actual_deduction(
-        self, client_obj, route_data, total_segments, sms_message_obj
-    ):
-        vendor_obj = route_data["vendor"]
-        # terminatingCompany_obj = route_data["terminatingCompany"]
-        # clientCompany_obj = client_obj.company
+    # Switching back and forth between the async loop and synchronous DB threads is expensive.
+    # You should combine these into a single transaction block inside one @sync_to_async function.
+    # combined save_sms and perform_actual_deduction into one atomic function to improve TPS
 
+    @sync_to_async
+    def save_and_bill_sms_transaction(
+        self,
+        client_obj,
+        route_data,
+        destination,
+        text,
+        encodingType,
+        total_segments,
+        total_chars,
+        source_addr,
+        smpp,
+        vendor,
+        unique_msg_id,
+        concat_ref,
+        sendClientDlr,
+    ):
+        """Does EVERYTHING in a single, hyper-fast database lock."""
         raw_terminating_company = route_data["terminatingCompany"]
         raw_client_company = client_obj.company
+
         with transaction.atomic():
-            # ⚡️ 1. THE PADLOCK: Fetch locked versions of the rows directly from the DB
+            # 1. LOCK BALANCES FIRST
             locked_terminating_company = (
                 type(raw_terminating_company)
                 .objects.select_for_update()
@@ -494,88 +572,193 @@ class Command(BaseCommand):
                 .objects.select_for_update()
                 .get(id=raw_client_company.id)
             )
-            print("\n" + "=" * 50)
-            print("💳 CREDIT DEDUCTION TRIGGERED 💳")
-            print(
-                f"1. Vendor Company: {locked_terminating_company} -> usedVendorCredit increased by {route_data['total_vendor_cost']}"
-            )
-            print(
-                f"2. Client Account: {locked_client} -> usedCredit increased by {route_data['total_client_cost']}"
-            )
-            print(
-                f"3. Client Parent Company: {locked_client_company} -> usedCustomerCredit increased by {route_data['total_client_cost']}"
-            )
-            print("=" * 50 + "\n")
-            # ---------------------------------------\
-            # ⚡️ 2. THE MATH: Only update the locked versions of the objects
-            # 1. Add to Vendor's Used Credit
+
+            # 2. DEDUCT MONEY
             locked_terminating_company.usedVendorCredit += route_data[
                 "total_vendor_cost"
             ]
             locked_terminating_company.save(update_fields=["usedVendorCredit"])
-            # terminatingCompany_obj.usedVendorCredit += route_data["total_vendor_cost"]
-            # terminatingCompany_obj.save()
 
-            # 2. Add to Client's Used Credit
             locked_client.usedCredit += route_data["total_client_cost"]
             locked_client.save(update_fields=["usedCredit"])
-            # client_obj.usedCredit += route_data["total_client_cost"]
-            # client_obj.save()
 
-            # 3. Add to the Global Company's Used Credit
             locked_client_company.usedCustomerCredit += route_data["total_client_cost"]
             locked_client_company.save(update_fields=["usedCustomerCredit"])
-            # clientCompany_obj.usedCustomerCredit += route_data["total_client_cost"]
-            # clientCompany_obj.save()
+
+            # 3. SAVE SMS
+            parent_msg = SMSMessage.objects.create(
+                destination=destination,
+                text=text,
+                encoding=encodingType,
+                segmentNumber=total_segments,
+                characterCount=total_chars,
+                status="queued",
+                systemId=source_addr,
+                smpp=smpp,
+                client=locked_client,
+                vendor=vendor,
+                message_id=unique_msg_id,
+                concatenated_reference=concat_ref,
+                sendClientDlr=sendClientDlr,
+                queued_at=timezone.now(),
+            )
+            create_message_parts(parent_msg, text)
+
+            # 4. WRITE RECEIPTS
             VendorTransaction.objects.create(
-                vendor=vendor_obj,
-                message=sms_message_obj,
+                vendor=vendor,
+                message=parent_msg,
                 transactionType=TransactionType.DEDUCTION,
                 segments=total_segments,
                 ratePerSegment=route_data["vendor_cost"],
                 amount=route_data["total_vendor_cost"],
-                # balanceSpent=terminatingCompany_obj.usedVendorCredit,
                 balanceSpent=locked_terminating_company.usedVendorCredit,
-                description=f"Routing charge for SMS {sms_message_obj.message_id}",
+                description=f"Routing charge for SMS {unique_msg_id}",
             )
 
-            # 2. Client Ledger (Uncomment when you add the balance field to Client)
-
             ClientTransaction.objects.create(
-                # client=client_obj,
-                client=locked_client,  # Use locked_client for accurate foreign key reference
-                message=sms_message_obj,
+                client=locked_client,
+                message=parent_msg,
                 transactionType=TransactionType.DEDUCTION,
                 segments=total_segments,
                 ratePerSegment=route_data["client_cost"],
                 amount=route_data["total_client_cost"],
                 chargePolicy=locked_client.invoicePolicy,
-                currency=locked_client.company.currency.name,
-                # balanceSpent=client_obj.usedCredit,
+                currency=(
+                    locked_client.company.currency.name
+                    if locked_client.company.currency
+                    else "USD"
+                ),
                 balanceSpent=locked_client.usedCredit,
-                description=f"Sent SMS {sms_message_obj.message_id}",
+                description=f"Sent SMS {unique_msg_id}",
             )
+
             DetailedSMSReport.objects.create(
-                message=sms_message_obj,
-                text_message_id=sms_message_obj.message_id,
-                senderId=sms_message_obj.systemId,  # or your source address
-                text=sms_message_obj.text,
+                message=parent_msg,
+                text_message_id=unique_msg_id,
+                senderId=source_addr,
+                text=text,
                 part_total=total_segments,
-                # client=client_obj.smppUsername,
                 client=locked_client.smppUsername,
                 clientRate=route_data["client_cost"],
                 client_charge=route_data["total_client_cost"],
-                vendor=vendor_obj.profileName,
+                vendor=vendor.profileName,
                 vendorRate=route_data["vendor_cost"],
                 vendor_charge=route_data["total_vendor_cost"],
                 submitStatus="SUBMITTED",
                 operatorMNC=route_data.get("mnc", "Unknown"),
-                request_time=sms_message_obj.createdAt,
-                destination=sms_message_obj.destination,
+                request_time=parent_msg.createdAt,
+                destination=destination,
                 countryMCC=route_data.get("country_code", "Unknown"),
             )
 
-        logger.info(f"Ledger updated for Msg {sms_message_obj.message_id}")
+        return parent_msg
+
+    # @sync_to_async
+    # def perform_actual_deduction(
+    #     self, client_obj, route_data, total_segments, sms_message_obj
+    # ):
+    #     vendor_obj = route_data["vendor"]
+    #     # terminatingCompany_obj = route_data["terminatingCompany"]
+    #     # clientCompany_obj = client_obj.company
+
+    #     raw_terminating_company = route_data["terminatingCompany"]
+    #     raw_client_company = client_obj.company
+    #     with transaction.atomic():
+    #         # ⚡️ 1. THE PADLOCK: Fetch locked versions of the rows directly from the DB
+    #         locked_terminating_company = (
+    #             type(raw_terminating_company)
+    #             .objects.select_for_update()
+    #             .get(id=raw_terminating_company.id)
+    #         )
+    #         locked_client = Client.objects.select_for_update().get(id=client_obj.id)
+    #         locked_client_company = (
+    #             type(raw_client_company)
+    #             .objects.select_for_update()
+    #             .get(id=raw_client_company.id)
+    #         )
+    #         print("\n" + "=" * 50)
+    #         print("💳 CREDIT DEDUCTION TRIGGERED 💳")
+    #         print(
+    #             f"1. Vendor Company: {locked_terminating_company} -> usedVendorCredit increased by {route_data['total_vendor_cost']}"
+    #         )
+    #         print(
+    #             f"2. Client Account: {locked_client} -> usedCredit increased by {route_data['total_client_cost']}"
+    #         )
+    #         print(
+    #             f"3. Client Parent Company: {locked_client_company} -> usedCustomerCredit increased by {route_data['total_client_cost']}"
+    #         )
+    #         print("=" * 50 + "\n")
+    #         # ---------------------------------------\
+    #         # ⚡️ 2. THE MATH: Only update the locked versions of the objects
+    #         # 1. Add to Vendor's Used Credit
+    #         locked_terminating_company.usedVendorCredit += route_data[
+    #             "total_vendor_cost"
+    #         ]
+    #         locked_terminating_company.save(update_fields=["usedVendorCredit"])
+    #         # terminatingCompany_obj.usedVendorCredit += route_data["total_vendor_cost"]
+    #         # terminatingCompany_obj.save()
+
+    #         # 2. Add to Client's Used Credit
+    #         locked_client.usedCredit += route_data["total_client_cost"]
+    #         locked_client.save(update_fields=["usedCredit"])
+    #         # client_obj.usedCredit += route_data["total_client_cost"]
+    #         # client_obj.save()
+
+    #         # 3. Add to the Global Company's Used Credit
+    #         locked_client_company.usedCustomerCredit += route_data["total_client_cost"]
+    #         locked_client_company.save(update_fields=["usedCustomerCredit"])
+    #         # clientCompany_obj.usedCustomerCredit += route_data["total_client_cost"]
+    #         # clientCompany_obj.save()
+    #         VendorTransaction.objects.create(
+    #             vendor=vendor_obj,
+    #             message=sms_message_obj,
+    #             transactionType=TransactionType.DEDUCTION,
+    #             segments=total_segments,
+    #             ratePerSegment=route_data["vendor_cost"],
+    #             amount=route_data["total_vendor_cost"],
+    #             # balanceSpent=terminatingCompany_obj.usedVendorCredit,
+    #             balanceSpent=locked_terminating_company.usedVendorCredit,
+    #             description=f"Routing charge for SMS {sms_message_obj.message_id}",
+    #         )
+
+    #         # 2. Client Ledger (Uncomment when you add the balance field to Client)
+
+    #         ClientTransaction.objects.create(
+    #             # client=client_obj,
+    #             client=locked_client,  # Use locked_client for accurate foreign key reference
+    #             message=sms_message_obj,
+    #             transactionType=TransactionType.DEDUCTION,
+    #             segments=total_segments,
+    #             ratePerSegment=route_data["client_cost"],
+    #             amount=route_data["total_client_cost"],
+    #             chargePolicy=locked_client.invoicePolicy,
+    #             currency=locked_client.company.currency.name,
+    #             # balanceSpent=client_obj.usedCredit,
+    #             balanceSpent=locked_client.usedCredit,
+    #             description=f"Sent SMS {sms_message_obj.message_id}",
+    #         )
+    #         DetailedSMSReport.objects.create(
+    #             message=sms_message_obj,
+    #             text_message_id=sms_message_obj.message_id,
+    #             senderId=sms_message_obj.systemId,  # or your source address
+    #             text=sms_message_obj.text,
+    #             part_total=total_segments,
+    #             # client=client_obj.smppUsername,
+    #             client=locked_client.smppUsername,
+    #             clientRate=route_data["client_cost"],
+    #             client_charge=route_data["total_client_cost"],
+    #             vendor=vendor_obj.profileName,
+    #             vendorRate=route_data["vendor_cost"],
+    #             vendor_charge=route_data["total_vendor_cost"],
+    #             submitStatus="SUBMITTED",
+    #             operatorMNC=route_data.get("mnc", "Unknown"),
+    #             request_time=sms_message_obj.createdAt,
+    #             destination=sms_message_obj.destination,
+    #             countryMCC=route_data.get("country_code", "Unknown"),
+    #         )
+
+    #     logger.info(f"Ledger updated for Msg {sms_message_obj.message_id}")
 
     async def save_to_buffer(
         self, system_id, destination, ref_num, total_parts, part_num, text_chunk
@@ -979,7 +1162,9 @@ class Command(BaseCommand):
         # Save to Database (Async Wrapper)
         client = getattr(writer, "client_obj", None)
         try:
-            saved_msg = await self.save_sms(
+            saved_msg = await self.save_and_bill_sms_transaction(
+                client_obj,
+                route_data,
                 destination_addr,
                 short_message,
                 encoding_type,
@@ -987,15 +1172,28 @@ class Command(BaseCommand):
                 total_chars,
                 source_addr,
                 smpp,
-                client_obj,  # client data
                 vendor,
                 unique_msg_id,
-                concat_ref=final_concat_ref,
-                sendClientDlr=final_send_dlr_decision,
+                final_concat_ref,
+                final_send_dlr_decision,
             )
-            await self.perform_actual_deduction(
-                client_obj, route_data, final_total_parts, saved_msg
-            )
+            # saved_msg = await self.save_sms(
+            #     destination_addr,
+            #     short_message,
+            #     encoding_type,
+            #     final_total_parts,
+            #     total_chars,
+            #     source_addr,
+            #     smpp,
+            #     client_obj,  # client data
+            #     vendor,
+            #     unique_msg_id,
+            #     concat_ref=final_concat_ref,
+            #     sendClientDlr=final_send_dlr_decision,
+            # )
+            # await self.perform_actual_deduction(
+            #     client_obj, route_data, final_total_parts, saved_msg
+            # )
             resp_body = unique_msg_id.encode("ascii") + b"\0"
             await self.send_pdu(
                 writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
@@ -1009,44 +1207,44 @@ class Command(BaseCommand):
             # await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
             return None
 
-    @sync_to_async
-    def save_sms(
-        self,
-        destination,
-        text,
-        encodingType,
-        total_segments,
-        total_chars,
-        system_id,
-        smpp=None,
-        client=None,
-        vendor=None,
-        unique_msg_id=None,
-        concat_ref=None,  # <--- NEW: Pass the reference number here
-        sendClientDlr=False,
-    ):
-        """
-        Django ORM is synchronous, so we wrap it in sync_to_async
-        """
-        parent_msg = SMSMessage.objects.create(
-            destination=destination,
-            text=text,
-            encoding=encodingType,
-            segmentNumber=total_segments,
-            characterCount=total_chars,
-            status="queued",  # It reached our server
-            systemId=system_id,
-            smpp=smpp,
-            client=client,
-            vendor=vendor,
-            message_id=unique_msg_id,
-            concatenated_reference=concat_ref,
-            sendClientDlr=sendClientDlr,
-            queued_at=timezone.now(),
-            # external_id=uuid.uuid4(),
-        )
-        create_message_parts(parent_msg, text)
-        return parent_msg
+    # @sync_to_async
+    # def save_sms(
+    #     self,
+    #     destination,
+    #     text,
+    #     encodingType,
+    #     total_segments,
+    #     total_chars,
+    #     system_id,
+    #     smpp=None,
+    #     client=None,
+    #     vendor=None,
+    #     unique_msg_id=None,
+    #     concat_ref=None,  # <--- NEW: Pass the reference number here
+    #     sendClientDlr=False,
+    # ):
+    #     """
+    #     Django ORM is synchronous, so we wrap it in sync_to_async
+    #     """
+    #     parent_msg = SMSMessage.objects.create(
+    #         destination=destination,
+    #         text=text,
+    #         encoding=encodingType,
+    #         segmentNumber=total_segments,
+    #         characterCount=total_chars,
+    #         status="queued",  # It reached our server
+    #         systemId=system_id,
+    #         smpp=smpp,
+    #         client=client,
+    #         vendor=vendor,
+    #         message_id=unique_msg_id,
+    #         concatenated_reference=concat_ref,
+    #         sendClientDlr=sendClientDlr,
+    #         queued_at=timezone.now(),
+    #         # external_id=uuid.uuid4(),
+    #     )
+    #     create_message_parts(parent_msg, text)
+    #     return parent_msg
 
     # TLV = Type-Length-Value
     async def send_error_with_tlv(self, writer, seq, error_msg="Low Balance"):
@@ -1140,6 +1338,7 @@ class Command(BaseCommand):
             try:
                 await self.reap_stale_messages()
                 pending_msgs = await self.get_pending_dlrs()
+                tasks = []  # ⚡️ Create a list of tasks
 
                 for msg in pending_msgs:
                     # ---> THE FIX <---
@@ -1150,14 +1349,17 @@ class Command(BaseCommand):
                     if target_username and target_username in self.active_clients:
                         writer = self.active_clients[target_username]
 
-                        # Push the receipt down the socket!
-                        await self.send_deliver_sm(writer, msg)
+                        # Create a quick async wrapper
+                        async def push_dlr(w, m, username):
+                            await self.send_deliver_sm(w, m)
+                            await self.mark_dlr_pushed(m)
 
-                        # Mark it as sent in the database
-                        await self.mark_dlr_pushed(msg)
-                        logger.info(
-                            f"Pushed DLR to {target_username} for msg ID: {msg.message_id}"
+                        tasks.append(
+                            asyncio.create_task(push_dlr(writer, msg, target_username))
                         )
+                # ⚡️ Blast them all out concurrently!
+                if tasks:
+                    await asyncio.gather(*tasks)
 
             except Exception as e:
                 logger.error(f"DLR Dispatcher Error: {e}")

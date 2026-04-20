@@ -90,24 +90,6 @@ class Client(models.Model):
     allowNetting = models.BooleanField(default=False)
     smppUsername = models.CharField(max_length=255)
     smppPassword = models.CharField(max_length=255)
-
-    timeOut = models.IntegerField(
-        default=30,
-        help_text="Time in seconds before SMPP connection times out due to inactivity",
-    )
-    rate = models.IntegerField(
-        default=0,
-        help_text="Max SUBMIT_SM per second (0=unlimited)",
-    )
-    window = models.IntegerField(
-        default=10,
-        help_text="Max outstanding unacked SUBMIT_SM",
-    )
-    enquire = models.IntegerField(
-        default=30,
-        help_text="Time in seconds between ENQUIRE_LINK requests",
-    )
-
     internalNotes = models.TextField(null=True, blank=True)
 
     isDeleted = models.BooleanField(default=False)
@@ -132,6 +114,80 @@ class Client(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ClientPolicy(models.Model):
+
+    client = models.OneToOneField(
+        Client, on_delete=models.CASCADE, related_name="clientPolicy"
+    )
+    # Speed & Throughput Control
+    maxTps = models.IntegerField(
+        default=50, help_text="Max SUBMIT_SM per second (0=unlimited)"
+    )
+    maxQueueDepth = models.IntegerField(
+        default=1000,
+        help_text="Max number of messages to queue for this client when rate limits are exceeded",
+    )
+
+    # The "Window" (Congestion Control)
+    # This is how many messages a client can send without waiting for an answer.
+    maxWindowPerSession = models.IntegerField(
+        default=10, help_text="Max outstanding unacked SUBMIT_SM"
+    )
+    # If a client has multiple connections open at once, this is the limit across all of them combined.
+    maxWindowGlobal = models.IntegerField(
+        default=100, help_text="Max outstanding unacked SUBMIT_SM across all sessions"
+    )
+
+    # Session & Timeout Management
+
+    # Limits how many simultaneous logins a client can have.
+    # This prevents a client from opening 100 connections to try and bypass your TPS limits.
+    maxSessions = models.IntegerField(
+        default=2, help_text="Max concurrent SMPP sessions for this client"
+    )
+
+    # If a client logs in but doesn't send anything for 60 seconds,
+    # your server will automatically kick them off to save resources.
+    idleTimeoutSec = models.IntegerField(
+        default=60,
+        help_text="Time in seconds before SMPP connection times out due to inactivity",
+    )
+
+    #: If you send a message to a vendor on behalf of the client and
+    # the vendor doesn't answer within 30 seconds, your server tells the client the request timed out.
+    submitTimeoutSec = models.IntegerField(
+        default=30,
+        help_text="Time in seconds before a SUBMIT_SM is considered timed out if no response is received",
+    )
+
+    # Security & Compliance
+    # If set to approvedOnly, the client can only send messages using a "Sender ID" (like "SQUAD")
+    # that you have pre-approved in the database.
+    senderIdPolicy = models.CharField(max_length=20, default="approvedOnly")
+    isDeleted = models.BooleanField(default=False)
+    createdBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="clientPolicy_created",
+    )
+    createdAt = models.DateTimeField(auto_now_add=True)
+    updatedBy = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="clientPolicy_updated",
+    )
+    updatedAt = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updatedAt"]
+        db_table = "squadServices_ClientPolicy"  # Add this line
+
+    def __str__(self):
+        return f"Policy for {self.client.name}"
 
 
 class IpWhitelist(models.Model):
