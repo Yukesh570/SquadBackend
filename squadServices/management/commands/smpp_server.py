@@ -313,40 +313,40 @@ class Command(BaseCommand):
                     client_obj = await self.authenticate_client(system_id, password)
 
                     if client_obj:
-                        policy = await sync_to_async(
-                            lambda: getattr(client_obj, "clientPolicy", None)
-                        )()
-                        writer.policy = policy  # Attach it to the session
+                        # policy = await sync_to_async(
+                        #     lambda: getattr(client_obj, "clientPolicy", None)
+                        # )()
+                        # writer.policy = policy  # Attach it to the session
 
-                        # ⚡️ ENFORCE: Max Sessions Check
-                        # scans your server's memory to see how many times this specific client is already connected.
+                        # # ⚡️ ENFORCE: Max Sessions Check
+                        # # scans your server's memory to see how many times this specific client is already connected.
 
-                        # it count how many times the client is currently connected by looking at the active_clients dictionary,
-                        # Every time it finds the client from that specific client_obj, it counts 1 2 3....
-                        current_sessions = sum(
-                            1
-                            for w in self.active_clients.values()  # This looks at all currently connected clients
-                            if getattr(w, "client_obj", None) == client_obj
-                        )
+                        # # it count how many times the client is currently connected by looking at the active_clients dictionary,
+                        # # Every time it finds the client from that specific client_obj, it counts 1 2 3....
+                        # current_sessions = sum(
+                        #     1
+                        #     for w in self.active_clients.values()  # This looks at all currently connected clients
+                        #     if getattr(w, "client_obj", None) == client_obj
+                        # )
 
-                        # Then it checks if that counted number(current_sessions) exceeds the maxSessions limit defined in the client's policy.
-                        # If it does, it blocks the login attempt and sends back a specific error message (Status 8: Too Many Sessions).
-                        if current_sessions >= max_allowed:
-                            logger.warning(
-                                f"Blocking {system_id}: Too many active sessions ({current_sessions}/{max_allowed})"
-                            )
-                            await self.send_bind_error_with_tlv(
-                                writer, cmd_id, 0x00000008, seq_num, "Too many sessions"
-                            )
-                            writer.close()
-                            return
+                        # # Then it checks if that counted number(current_sessions) exceeds the maxSessions limit defined in the client's policy.
+                        # # If it does, it blocks the login attempt and sends back a specific error message (Status 8: Too Many Sessions).
+                        # if current_sessions >= max_allowed:
+                        #     logger.warning(
+                        #         f"Blocking {system_id}: Too many active sessions ({current_sessions}/{max_allowed})"
+                        #     )
+                        #     await self.send_bind_error_with_tlv(
+                        #         writer, cmd_id, 0x00000008, seq_num, "Too many sessions"
+                        #     )
+                        #     writer.close()
+                        #     return
 
-                        print(
-                            f"Current sessions for=========== {system_id}: {current_sessions}"
-                        )
-                        max_allowed = (
-                            policy.maxSessions if policy else 2
-                        )  # default fallback
+                        # print(
+                        #     f"Current sessions for=========== {system_id}: {current_sessions}"
+                        # )
+                        # max_allowed = (
+                        #     policy.maxSessions if policy else 2
+                        # )  # default fallback
                         if client_obj.status not in ["ACTIVE", "TRIAL"]:
                             logger.warning(
                                 f"Blocking {system_id}: Account is {client_obj.status}."
