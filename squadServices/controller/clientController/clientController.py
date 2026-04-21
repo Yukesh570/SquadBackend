@@ -250,16 +250,16 @@ class ClientPolicyViewSet(viewsets.ModelViewSet):
     filterset_class = ClientPolicyFilter
 
     def get_queryset(self):
-        # module = self.kwargs.get("module")
-        # check_permission(self, "read", module)
+        module = self.kwargs.get("module")
+        check_permission(self, "read", module)
         return ClientPolicy.objects.filter(isDeleted=False)
 
     def create(self, request, *args, **kwargs):
         """
         Intercept the creation process to handle soft-deleted OneToOne records.
         """
-        # module = self.kwargs.get("module")
-        # check_permission(self, "write", module)
+        module = self.kwargs.get("module")
+        check_permission(self, "write", module)
 
         client_id = request.data.get("client")
 
@@ -299,9 +299,9 @@ class ClientPolicyViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        # module = self.kwargs.get("module")
+        module = self.kwargs.get("module")
         user = self.request.user
-        # check_permission(self, "write", module)
+        check_permission(self, "write", module)
 
         instance = serializer.save(createdBy=user, updatedBy=user)
         log_action_create(user, "ClientPolicy", f"{instance.client.name} Policy")
