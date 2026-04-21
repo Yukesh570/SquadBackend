@@ -94,6 +94,8 @@ services:
       - rabbitmq
     ports:
       - "2775:2775" # Open SMPP port to the world
+    volumes:
+      - ./logs:/app/logs
     restart: always
 
   puskarserver:
