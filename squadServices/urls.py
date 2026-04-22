@@ -64,6 +64,7 @@ from squadServices.controller.notificationController.notificationController impo
     NotificationViewSet,
 )
 from squadServices.controller.operatorController.operatorController import (
+    OperatorNetworkCodeViewSet,
     OperatorViewSet,
 )
 from squadServices.controller.rateManagementController.customerRateController import (
@@ -774,6 +775,25 @@ urlpatterns = [
     path(
         "operator/<str:module>/<int:pk>/",
         OperatorViewSet.as_view(
+            {
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+    ),
+    path(
+        "operatorNetworkCode/<str:module>/",
+        OperatorNetworkCodeViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+    ),
+    path(
+        "operatorNetworkCode/<str:module>/<int:pk>/",
+        OperatorNetworkCodeViewSet.as_view(
             {
                 "put": "update",
                 "patch": "partial_update",

@@ -3,9 +3,15 @@ from django.db import models
 
 
 class Country(models.Model):
+    iso2 = models.CharField(max_length=2, default="NP", help_text="e.g. NP")
     name = models.CharField(max_length=100)
     countryCode = models.CharField(max_length=100)
-    MCC = models.CharField(max_length=100)
+    region = models.CharField(max_length=50, null=True, blank=True)
+    isActive = models.BooleanField(default=True)
+    subRegion = models.CharField(max_length=100, null=True, blank=True)
+
+    # remove mcc
+    # MCC = models.CharField(max_length=100, null=True, blank=True)
     isDeleted = models.BooleanField(default=False)
     createdBy = models.ForeignKey(
         settings.AUTH_USER_MODEL,

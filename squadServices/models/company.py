@@ -76,9 +76,15 @@ class Company(models.Model):
     country = models.ForeignKey(
         Country, on_delete=models.CASCADE, related_name="companys"
     )
-    state = models.ForeignKey(State, on_delete=models.CASCADE, related_name="states")
+    state = models.ForeignKey(
+        State, on_delete=models.CASCADE, related_name="states", null=True, blank=True
+    )
     category = models.ForeignKey(
-        CompanyCategory, on_delete=models.CASCADE, related_name="companyCategorys"
+        CompanyCategory,
+        on_delete=models.CASCADE,
+        related_name="companyCategorys",
+        null=True,
+        blank=True,
     )
     status = models.ForeignKey(
         CompanyStatus, on_delete=models.CASCADE, related_name="companyStatuss"

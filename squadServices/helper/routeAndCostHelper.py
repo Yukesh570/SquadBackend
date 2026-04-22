@@ -27,22 +27,21 @@ def get_route_and_cost(originating_client, destination_country):
 
     client = route.orginatingClient
     clientCompany = route.orginatingCompany
-    mnc_value = route.operator.MNC if route.operator else "All"
+    mnc_value = "All"
     if not vendor.ratePlanName:
         return None, f"Vendor '{vendor.profileName}' has no ratePlan assigned."
 
     # 2. SANITIZE THE MCC
-    try:
-        mcc_integer = int(str(destination_country.MCC).strip())
-        mccClient = int(str(clientCompany.country.MCC).strip())
-    except (ValueError, TypeError):
-        return None, f"Invalid MCC format in Country '{destination_country.name}'."
+    # try:
+    #     mcc_integer = int(str(destination_country.OperatorNetworkCode.MCC).strip())
+    # except (ValueError, TypeError):
+    #     return None, f"Invalid MCC format in Country '{destination_country.name}'."
 
     # 3. FIND THE COST (Country-level only!)
     rate_entry = (
         VendorRate.objects.filter(
             ratePlan=vendor.ratePlanName,
-            MCC=mcc_integer,
+            # MCC=mcc_integer,
             # We no longer filter by MNC. We just take the rate assigned to the MCC.
             isDeleted=False,
         )
@@ -53,7 +52,7 @@ def get_route_and_cost(originating_client, destination_country):
     customerRateEntry = (
         CustomerRate.objects.filter(
             ratePlan=client.ratePlanName,
-            MCC=mcc_integer,
+            # MCC=mcc_integer,
             isDeleted=False,
         )
         .order_by("-createdAt")
@@ -82,6 +81,6 @@ def get_route_and_cost(originating_client, destination_country):
         "client_cost": customerRateEntry.rate,
         "route_id": route.id,
         "smpp": smpp_config,
-        "country_code": mcc_integer,
+        "country_code": "111",
         "mnc": mnc_value,
     }, None

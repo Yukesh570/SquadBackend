@@ -16,7 +16,7 @@ from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.navItem import NavItem, NavUserRelation
 from squadServices.models.network import Network
 from squadServices.models.notificationModel.notification import Notification
-from squadServices.models.operators.operators import Operators
+from squadServices.models.operators.operators import OperatorNetworkCode, Operators
 from squadServices.models.rateManagementModel.customerRate import CustomerRate
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.routeManager.customRoute import CustomRoute
@@ -162,9 +162,12 @@ class countryAdmin(admin.ModelAdmin):
     model = Country
     list_display = (
         "id",
+        "iso2",
         "name",
         "countryCode",
-        "MCC",
+        "region",
+        "isActive",
+        "subRegion",
         "isDeleted",
         "createdAt",
         "updatedAt",
@@ -461,12 +464,13 @@ class OperatorsAdmin(admin.ModelAdmin):
         "id",
         "name",
         "country",
-        "MNC",
+        "operatorCode",
+        "status",
+        "notes",
         "isDeleted",
         "createdAt",
         "updatedAt",
     )
-    search_fields = ("ratePlan", "MNC")
     readonly_fields = ("createdAt", "updatedAt")
 
 
@@ -1236,6 +1240,65 @@ class ClientPolicyAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+
+@admin.register(OperatorNetworkCode)
+class OperatorNetworkCodeAdmin(admin.ModelAdmin):
+    # 1. High-visibility columns
+    list_display = (
+        "id",
+        "get_country_iso",  # Custom method for cleaner look
+        "operator",
+        "MCC",
+        "MNC",
+        "networkName",
+        "networkType",
+        "isPrimary",
+        "status",
+    )
+
+    # 2. Powerful sidebar filters
+    list_filter = (
+        "status",
+        "networkType",
+        "isPrimary",
+        "country__name",  # Filter by country name
+        "operator__name",  # Filter by operator name
+    )
+
+    # 3. Search anything
+    search_fields = (
+        "MCC",
+        "MNC",
+        "networkName",
+        "operator__name",
+        "country__name",
+    )
+
+    # 4. Grouping for better UX
+    fieldsets = (
+        ("Network Identity", {"fields": ("country", "operator", "networkName")}),
+        ("Technical Codes", {"fields": ("MCC", "MNC", "networkType")}),
+        ("Configuration", {"fields": ("isPrimary", "status")}),
+        (
+            "Timestamps",
+            {
+                "fields": ("createdAt", "updatedAt", "effectiveFrom", "effectiveTo"),
+                "classes": ("collapse",),  # Hides these by default to save space
+            },
+        ),
+    )
+
+    readonly_fields = ("createdAt", "updatedAt")
+
+    # 5. Helper method to show ISO code in list view
+    @admin.display(description="Country")
+    def get_country_iso(self, obj):
+        return f"{obj.country.name} ({obj.country.iso2})"
+
+    # 6. Optimization: Prevents N+1 query issues in admin
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("operator", "country")
 
 
 admin.site.register(CustomRoute, CustomRouteAdmin)

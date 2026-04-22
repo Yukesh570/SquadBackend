@@ -25,38 +25,53 @@ class PhoneNumberHandler:
     @staticmethod
     def validate(number: str, country: Optional[str] = None) -> Tuple[bool, str, str]:
         """
-        Validate phone number and return (is_valid, normalized_number, error_message)
+        Fixed Validation: Properly handles international numbers even without the '+' prefix.
         """
         try:
-            # 1. Strip spaces and letters
+            # 1. Basic Cleanup
             normalized = PhoneNumberHandler.normalize(number)
-            parsed = None
+            if not normalized:
+                return False, "", "Empty number"
 
-            # 2. Try parsing it exactly as it arrived
-            if normalized.startswith("+"):
-                parsed = phonenumbers.parse(normalized, None)
-            else:
-                # Try parsing it as a local number for the default country (e.g., US)
-                try:
-                    parsed = phonenumbers.parse(normalized, country or "US")
-                    if not phonenumbers.is_valid_number(parsed):
-                        raise ValueError("Invalid local number")
-                except Exception:
-                    # ⚡️ THE MAGIC FIX: It failed as a local number, so let's assume
-                    # the user uploaded an international number but forgot the '+' sign!
-                    try:
-                        parsed = phonenumbers.parse("+" + normalized, None)
-                    except Exception as e:
-                        return False, normalized, f"Could not parse: {str(e)}"
+            # 2. Try parsing as-is (works if it starts with + or 00)
+            # If no +, use the provided country or default to NP (since you are in Nepal)
+            default_region = country or "NP"
 
-            # 3. Final Validation Check
-            if parsed and phonenumbers.is_valid_number(parsed):
-                e164 = phonenumbers.format_number(
-                    parsed, phonenumbers.PhoneNumberFormat.E164
+            try:
+                # If it starts with +, parse globally.
+                # If not, try parsing as a local number for the default_region.
+                parsed = phonenumbers.parse(
+                    normalized, None if normalized.startswith("+") else default_region
                 )
-                return True, e164, ""
-            else:
-                return False, normalized, "Invalid phone number"
+
+                if phonenumbers.is_valid_number(parsed):
+                    return (
+                        True,
+                        phonenumbers.format_number(
+                            parsed, phonenumbers.PhoneNumberFormat.E164
+                        ),
+                        "",
+                    )
+            except Exception:
+                pass  # Continue to step 3 if local parsing fails
+
+            # 3. ⚡️ THE RE-TRY LOGIC (For 57321... style numbers)
+            # If it's not a local number, try forcing it to be international
+            if not normalized.startswith("+"):
+                try:
+                    forced_intl = phonenumbers.parse("+" + normalized, None)
+                    if phonenumbers.is_valid_number(forced_intl):
+                        return (
+                            True,
+                            phonenumbers.format_number(
+                                forced_intl, phonenumbers.PhoneNumberFormat.E164
+                            ),
+                            "",
+                        )
+                except Exception:
+                    pass
+
+            return False, normalized, "Invalid phone number or country code"
 
         except Exception as e:
             return False, number, str(e)
@@ -112,43 +127,47 @@ def clean_phone_number(number: str, country: Optional[str] = None) -> str:
     return normalized if is_valid else ""
 
 
-# Initialize handler
-handler = PhoneNumberHandler()
+if __name__ == "__main__":
+    # Test logic goes here if you ever need it again!
+    pass
 
-# Test various formats
-test_numbers = [
-    "+1 212 555 1234",
-    "001 212 555 1234",
-    "2125551234",
-    "+44 20 7946 0958",
-    "0044 20 7946 0958",
-    "+91 98765 43210",
-    "9876543210",  # Local Indian number (needs country detection)
-    "+49 30 123456",
-    "030 123456",  # Local German number
-]
+# # Initialize handler
+# handler = PhoneNumberHandler()
 
-for number in test_numbers:
-    normalized = handler.normalize(number)
-    is_valid, e164, error = handler.validate(number)
-    country_code, remaining = handler.extract_country_code(number)
-    pretty = handler.format_pretty(number)
+# # Test various formats
+# test_numbers = [
+#     "+1 212 555 1234",
+#     "001 212 555 1234",
+#     "2125551234",
+#     "+44 20 7946 0958",
+#     "0044 20 7946 0958",
+#     "+91 98765 43210",
+#     "9876543210",  # Local Indian number (needs country detection)
+#     "+49 30 123456",
+#     "030 123456",  # Local German number
+# ]
 
-    print(f"Original: {number}")
-    print(f"Normalized: {normalized}")
-    print(f"Valid: {is_valid}")
-    if is_valid:
-        print(f"E.164: {e164}")
-        print(f"Pretty: {pretty}")
-    else:
-        print(f"Error: {error}")
-    print(f"Country code: {country_code}, Remaining: {remaining}")
-    print("-" * 50)
+# for number in test_numbers:
+#     normalized = handler.normalize(number)
+#     is_valid, e164, error = handler.validate(number)
+#     country_code, remaining = handler.extract_country_code(number)
+#     pretty = handler.format_pretty(number)
 
-# Quick one-step cleaning
-cleaned = clean_phone_number("+1 (212) 555-1234")
-print(f"Cleaned: {cleaned}")  # +12125551234
+#     print(f"Original: {number}")
+#     print(f"Normalized: {normalized}")
+#     print(f"Valid: {is_valid}")
+#     if is_valid:
+#         print(f"E.164: {e164}")
+#         print(f"Pretty: {pretty}")
+#     else:
+#         print(f"Error: {error}")
+#     print(f"Country code: {country_code}, Remaining: {remaining}")
+#     print("-" * 50)
 
-# Validate only
-if validate_phone("+44 20 7946 0958"):
-    print("Valid UK number")
+# # Quick one-step cleaning
+# cleaned = clean_phone_number("+1 (212) 555-1234")
+# print(f"Cleaned: {cleaned}")  # +12125551234
+
+# # Validate only
+# if validate_phone("+44 20 7946 0958"):
+#     print("Valid UK number")

@@ -39,10 +39,22 @@ class CountryFilter(django_filters.FilterSet):
     name = django_filters.CharFilter(lookup_expr="icontains")
     countryCode = django_filters.CharFilter(lookup_expr="icontains")
     MCC = django_filters.CharFilter(lookup_expr="icontains")
+    region = django_filters.CharFilter(lookup_expr="icontains")
+    subRegion = django_filters.CharFilter(lookup_expr="icontains")
+    iso2 = django_filters.CharFilter(lookup_expr="icontains")
+    isActive = django_filters.BooleanFilter()
 
     class Meta:
         model = Country
-        fields = ["name", "countryCode", "MCC"]
+        fields = [
+            "name",
+            "countryCode",
+            "MCC",
+            "region",
+            "subRegion",
+            "iso2",
+            "isActive",
+        ]
 
 
 class CountryViewSet(viewsets.ModelViewSet):

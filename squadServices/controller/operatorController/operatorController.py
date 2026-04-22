@@ -1,5 +1,6 @@
 from rest_framework import viewsets, permissions
 
+from squadServices.controller.companyController import ExtendedFilterSet
 from squadServices.helper.action import (
     log_action_create,
     log_action_delete,
@@ -12,10 +13,11 @@ from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 
 from squadServices.models.notificationModel.notification import Notification
-from squadServices.models.operators.operators import Operators
+from squadServices.models.operators.operators import OperatorNetworkCode, Operators
 
 from squadServices.models.users import UserLog
 from squadServices.serializer.operatorSerailizer.operatorSerializer import (
+    OperatorNetworkCodeSerializer,
     OperatorSerializer,
 )
 
@@ -25,8 +27,9 @@ class OperatorFilter(django_filters.FilterSet):
         field_name="country__name", lookup_expr="icontains"
     )
     name = django_filters.CharFilter(lookup_expr="icontains")
-
+    operatorCode = django_filters.CharFilter(lookup_expr="icontains")
     MNC = django_filters.CharFilter(lookup_expr="icontains")
+    status = django_filters.CharFilter(lookup_expr="icontains")
     createdAt = django_filters.DateFromToRangeFilter()
 
     class Meta:
@@ -34,6 +37,8 @@ class OperatorFilter(django_filters.FilterSet):
         fields = [
             "countryName",
             "name",
+            "operatorCode",
+            "status",
             "MNC",
             "createdAt",
         ]
@@ -84,3 +89,71 @@ class OperatorViewSet(viewsets.ModelViewSet):
         instance.updatedBy = user
         instance.save()
         log_action_delete(user, "Operator", instance.name)
+
+
+class OperatorNetworkCodeFilter(ExtendedFilterSet):
+    class Meta:
+        model = OperatorNetworkCode
+        fields = {
+            "country__name": ["exact", "icontains"],
+            "operator__name": ["exact", "icontains"],
+            "MNC": ["exact", "icontains", "isnull"],
+            "MCC": ["exact", "icontains", "isnull"],
+            "status": ["exact", "icontains", "isnull"],
+            "networkName": ["exact", "icontains", "isnull"],
+            "networkType": ["exact", "icontains", "isnull"],
+            "isPrimary": ["exact", "icontains", "isnull"],
+            "effectiveFrom": ["exact", "gt", "lt", "range", "isnull"],
+            "effectiveTo": ["exact", "gt", "lt", "range", "isnull"],
+            "createdAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
+
+
+class OperatorNetworkCodeViewSet(viewsets.ModelViewSet):
+    serializer_class = OperatorNetworkCodeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = OperatorNetworkCodeFilter
+
+    def get_queryset(self):
+        # module = self.kwargs.get("module")
+        # check_permission(self, "read", module)
+        return OperatorNetworkCode.objects.filter(isDeleted=False)
+
+    def perform_create(self, serializer):
+        # module = self.kwargs.get("module")
+        user = self.request.user
+        # check_permission(self, "write", module)
+
+        instance = serializer.save(createdBy=user, updatedBy=user)
+        log_action_create(
+            user,
+            "OperatorNetworkCode",
+            f"{instance.operator.name}'s OperatorNetworkCode",
+        )
+
+    def perform_update(self, serializer):
+        module = self.kwargs.get("module")
+        check_permission(self, "put", module)
+
+        user = self.request.user
+        instance = serializer.save(updatedBy=user)
+        log_action_update(
+            user,
+            "OperatorNetworkCode",
+            f"{instance.operator.name}'s OperatorNetworkCode",
+        )
+
+    def perform_destroy(self, instance):
+        module = self.kwargs.get("module")
+        check_permission(self, "delete", module)
+        user = self.request.user
+        instance.isDeleted = True
+        instance.updatedBy = user
+        instance.save()
+        log_action_delete(
+            user,
+            "OperatorNetworkCode",
+            f" {instance.operator.name}'s OperatorNetworkCode",
+        )
