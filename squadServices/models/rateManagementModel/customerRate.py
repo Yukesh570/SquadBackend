@@ -36,7 +36,7 @@ class CustomerRate(models.Model):
     MCC = models.IntegerField(null=True, blank=True)
     MNC = models.IntegerField(null=True, blank=True)
 
-    rate = models.IntegerField(null=True, blank=True)
+    rate = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     remark = models.CharField(max_length=255, null=True, blank=True)
     dateTime = models.DateTimeField(null=True, blank=True)
 
