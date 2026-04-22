@@ -11,7 +11,6 @@ class OperatorSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "country",
-            "MNC",
             "operatorCode",
             "status",
             "notes",
