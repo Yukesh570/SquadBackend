@@ -505,8 +505,17 @@ class Command(BaseCommand):
                     },
                 )
                 logger.info(f"{system_id_logged_in} went OFFLINE.")
-            writer.close()
-            await writer.wait_closed()
+            try:
+                if not writer.is_closing():
+                    writer.close()
+
+                # Use a small timeout so we don't hang forever if the peer is dead
+                await asyncio.wait_for(writer.wait_closed(), timeout=2.0)
+            except (ConnectionResetError, BrokenPipeError, asyncio.TimeoutError):
+                # We ignore these because they just mean the client hung up first
+                pass
+            except Exception as e:
+                logger.debug(f"Quietly handled closing error: {e}")
 
     @sync_to_async
     def get_route_and_potential_cost(
