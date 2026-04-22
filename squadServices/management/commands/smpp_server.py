@@ -890,11 +890,14 @@ class Command(BaseCommand):
 
     async def handle_submit_sm(self, body, seq_num, writer):
         """
-        Parses the SUBMIT_SM body and saves to Django DB.
+        Parses SUBMIT_SM, reassembles multipart messages, and loops through
+        comma-separated destination numbers for routing and billing.
         """
         offset = 0
 
-        # Parse mandatory parameters
+        # ==========================================
+        # 1. PARSE MANDATORY PARAMETERS (HEADER)
+        # ==========================================
         service_type, offset = self.read_c_string(body, offset)
         source_addr_ton = body[offset]
         offset += 1
@@ -907,23 +910,11 @@ class Command(BaseCommand):
         dest_addr_npi = body[offset]
         offset += 1
         raw_destination_addr, offset = self.read_c_string(body, offset)
-        # It cleans the phone number and detects the encoding (GSM-7).
-        validated_number = clean_phone_number(raw_destination_addr)
+        print(f"📞 Parsed destination numbers: {raw_destination_addr}")
 
-        # response for bad phone numbers
-        if not validated_number:
-            logger.warning(
-                f"Invalid destination number rejected: {raw_destination_addr}"
-            )
-            await self.send_error_with_tlv(
-                writer, seq_num, error_msg="Invalid Destination Number"
-            )
-            # await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x0000000B, seq_num, b"")
-            # You should probably reject the SMPP message here!
-            return None
-        destination_addr = validated_number.replace("+", "")
-        client_obj = getattr(writer, "client_obj", None)
-
+        # ⚡️ SPLIT COMMA-SEPARATED NUMBERS
+        raw_numbers = [n.strip() for n in raw_destination_addr.split(",") if n.strip()]
+        print(f"📞 Parsed destination numbers: {raw_numbers}")
         esm_class = body[offset]
         offset += 1
         protocol_id = body[offset]
@@ -936,11 +927,17 @@ class Command(BaseCommand):
             offset
         ]  # this value came for the  client when they send the SUBMIT_SM command. It indicates whether the client wants a DLR for this message or not.
         offset += 1
+
+        # Determine DLR requirements
+        client_obj = getattr(writer, "client_obj", None)
         client_wants_dlr = (
             registered_delivery == 1
         )  # compare with 1 because in SMPP, a value of 1 means "Yes, I want a DLR", while 0 means "No, I don't want a DLR".
-        client_allowed_dlr = getattr(client_obj, "enableDlr", False)
+        client_allowed_dlr = (
+            getattr(client_obj, "enableDlr", False) if client_obj else False
+        )
         final_send_dlr_decision = client_wants_dlr and client_allowed_dlr
+
         replace_if_present_flag = body[offset]
         offset += 1
         data_coding = body[offset]
@@ -950,9 +947,13 @@ class Command(BaseCommand):
         sm_length = body[offset]
         offset += 1
 
-        # Extract the raw bytes first
+        # Extract Raw Message Bytes
         raw_short_message = body[offset : offset + sm_length]
         offset += sm_length
+
+        # ==========================================
+        # 2. PARSE TLV (OPTIONAL PARAMETERS)
+        # ==========================================
         sar_ref_num = None
         sar_total_parts = None
         sar_part_num = None
@@ -1032,7 +1033,7 @@ class Command(BaseCommand):
                     f"Rejected: Client sent conflicting UDH and SAR instructions."
                 )
                 await self.send_error_with_tlv(
-                    writer, seq_num, error_msg="Protocol Error: UDH and SAR mismatch."
+                    writer, seq_num, "Protocol Error: UDH and SAR mismatch."
                 )
                 return None
             is_multipart = True
@@ -1043,8 +1044,10 @@ class Command(BaseCommand):
             part_num = sar_part_num
             is_multipart = True
 
+        # Handle Multipart Buffering
         if is_multipart:
-            # 1. Decode just this specific chunk
+            # Note: We use the raw_destination_addr as the key to group the parts
+            # Decode the text
             if data_coding == 8:
                 chunk_text = raw_short_message.decode(
                     "utf-16-be", errors="ignore"
@@ -1057,7 +1060,7 @@ class Command(BaseCommand):
             # 2. Park it in the Waiting Room
             await self.save_to_buffer(
                 client_obj.smppUsername,
-                destination_addr,
+                raw_destination_addr,
                 ref_num,
                 total_parts,
                 part_num,
@@ -1069,11 +1072,11 @@ class Command(BaseCommand):
 
             # 3. Check if we have all the pieces
             buffered_parts = await self.get_buffered_parts(
-                client_obj.smppUsername, destination_addr, ref_num
+                client_obj.smppUsername, raw_destination_addr, ref_num
             )
 
             if len(buffered_parts) < total_parts:
-                # ⚠️ WE ARE STILL WAITING FOR MORE PARTS!
+                # Still waiting for parts. Return a temp ID and exit early.
                 temp_msg_id = await self.generate_message_id()
                 resp_body = temp_msg_id.encode("ascii") + b"\0"
                 await self.send_pdu(
@@ -1085,9 +1088,9 @@ class Command(BaseCommand):
             print(f"✅ All {total_parts} parts received! Stitching message together...")
 
             # 4. Clean out the waiting room
-            await self.clear_buffer(client_obj.smppUsername, destination_addr, ref_num)
-
-            # 5. Stitch the text together
+            await self.clear_buffer(
+                client_obj.smppUsername, raw_destination_addr, ref_num
+            )
             short_message = "".join([p.text_chunk for p in buffered_parts])
             is_multipart = False  # Turn this off so it behaves like a normal message
             ref_num = None  # Wipe the client's reference number!
@@ -1103,13 +1106,14 @@ class Command(BaseCommand):
                     "utf-8", errors="ignore"
                 ).replace("\x00", "")
 
-        # --------------------------------END REASSEMBLER ENGINE ---------------------------------------------
-
+        # ==========================================
+        # 4. PRE-FLIGHT CHECKS & GUARDS
+        # ==========================================
         if not short_message.strip():
             account_name = client_obj.smppUsername if client_obj else "UnknownClient"
             logger.warning(f"Rejected: Empty message payload from {account_name}")
             await self.send_error_with_tlv(
-                writer, seq_num, error_msg="Message text cannot be empty."
+                writer, seq_num, "Message text cannot be empty."
             )
             return None
 
@@ -1117,7 +1121,7 @@ class Command(BaseCommand):
         if len(source_addr) > 15:
             logger.warning(f"Rejected: Sender ID '{source_addr}' too long.")
             await self.send_error_with_tlv(
-                writer, seq_num, error_msg="Invalid Sender ID: Exceeds 15 chars."
+                writer, seq_num, "Invalid Sender ID: Exceeds 15 chars."
             )
             return None
 
@@ -1125,129 +1129,98 @@ class Command(BaseCommand):
         total_segments, total_chars = self.calculate_segments(
             short_message, encoding_type
         )
-        final_total_parts = total_segments
-
         # ------------------------------------------------------------------
         # ⚡️ GUARD 3: Segment Count Limit (Protect against massive messages)
         # ------------------------------------------------------------------
         # Check if the client has a specific limit in the DB, otherwise default to a safe 10 parts
         # MAX_ALLOWED_SEGMENTS = getattr(client_obj, "maxSegments", 10)
         # since i dont have maxsegment in clinet so i put 10 as default
-
         MAX_ALLOWED_SEGMENTS = 10
-        if final_total_parts > MAX_ALLOWED_SEGMENTS:
+        if total_segments > MAX_ALLOWED_SEGMENTS:
             logger.warning(
                 f"Rejected: Message from {client_obj.smppUsername} exceeds segment limit "
-                f"({final_total_parts} parts > {MAX_ALLOWED_SEGMENTS} allowed)."
+                f"({total_segments} parts > {MAX_ALLOWED_SEGMENTS} allowed)."
             )
             await self.send_error_with_tlv(
                 writer,
                 seq_num,
-                error_msg=f"Message too long. Max segments allowed: {MAX_ALLOWED_SEGMENTS}.",
+                f"Message too long. Max segments allowed: {MAX_ALLOWED_SEGMENTS}.",
             )
             return None
-        # ------------------------------------------------------------------
-        # ⚡️ GUARD 4: Duplicate Message Prevention (60-Second Cooldown)
-        # ------------------------------------------------------------------
-        # 1. Create a unique digital fingerprint of the text message
-        # text_signature = hashlib.md5(short_message.encode("utf-8")).hexdigest()
 
-        # # 2. Create a Redis key tying the Client, the MSISDN, and the Fingerprint together
-        # dedup_key = (
-        #     f"smpp:dedup:{client_obj.smppUsername}:{destination_addr}:{text_signature}"
-        # )
+        final_concat_ref = secrets.randbelow(256) if total_segments > 1 else None
 
-        # # 3. Ask Redis to save this key for 60 seconds.
-        # # nx=True means "Only save this if it DOES NOT already exist."
-        # is_new_message = await self.redis_client.set(dedup_key, "1", nx=True, ex=60)
+        # ==========================================
+        # 5. THE BULK ROUTING & BILLING LOOP
+        # ==========================================
+        processed_ids = []
+        print("-----------", raw_numbers)
 
-        # if not is_new_message:
-        #     logger.warning(
-        #         f"Rejected: Duplicate message detected from {client_obj.smppUsername} to {destination_addr}."
-        #     )
-        #     await self.send_error_with_tlv(
-        #         writer,
-        #         seq_num,
-        #         error_msg="Duplicate Message. Please wait 60 seconds before resending.",
-        #     )
-        #     return None
-        # ------------------------------------------------------------------
-        final_concat_ref = None
-        concat_ref = None
-        if final_total_parts > 1:
-            # Generate a random 1-byte reference (0-255)
-            final_concat_ref = secrets.randbelow(256)
-            logger.info(
-                f"Server generated new internal Reference Number: {final_concat_ref}"
+        for current_raw_num in raw_numbers:
+            # 1. Clean the specific number
+            validated_number = clean_phone_number(current_raw_num)
+            if not validated_number:
+                logger.warning(f"Skipping invalid bulk number: {current_raw_num}")
+                continue
+
+            destination_addr = validated_number.replace("+", "")
+
+            # 2. Find Route and Check Cost Constraints
+            route_data, routing_error = await self.get_route_and_potential_cost(
+                client_obj, destination_addr, total_segments
             )
-        route_data, routing_error = await self.get_route_and_potential_cost(
-            client_obj, destination_addr, total_segments
-        )
 
-        # response for routing/billing failures
-        if routing_error:
-            logger.warning(
-                f"Routing/Billing Failed for {destination_addr}: {routing_error}"
-            )
-            await self.send_error_with_tlv(writer, seq_num, error_msg=routing_error)
-            # await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
-            return None  # This will trigger the 0x0000000B rejection in handle_client!
-        vendor = route_data["vendor"]
-        smpp = route_data["smpp"]
-        # Extract SMS Text
-        # Generate 36 bit unique message ID
-        unique_msg_id = await self.generate_message_id()  # Add 'await'
-        logger.info(
-            f"Received SMS from {source_addr} to {destination_addr}: {short_message}"
-        )
-        print(f"Received SMS from {source_addr} to {destination_addr}: {short_message}")
+            if routing_error:
+                logger.warning(
+                    f"Routing/Billing Failed for {destination_addr}: {routing_error}"
+                )
+                continue
 
-        # Save to Database (Async Wrapper)
-        client = getattr(writer, "client_obj", None)
-        try:
-            saved_msg = await self.save_and_bill_sms_transaction(
-                client_obj,
-                route_data,
-                destination_addr,
-                short_message,
-                encoding_type,
-                final_total_parts,
-                total_chars,
-                source_addr,
-                smpp,
-                vendor,
-                unique_msg_id,
-                final_concat_ref,
-                final_send_dlr_decision,
-            )
-            # saved_msg = await self.save_sms(
-            #     destination_addr,
-            #     short_message,
-            #     encoding_type,
-            #     final_total_parts,
-            #     total_chars,
-            #     source_addr,
-            #     smpp,
-            #     client_obj,  # client data
-            #     vendor,
-            #     unique_msg_id,
-            #     concat_ref=final_concat_ref,
-            #     sendClientDlr=final_send_dlr_decision,
-            # )
-            # await self.perform_actual_deduction(
-            #     client_obj, route_data, final_total_parts, saved_msg
-            # )
-            resp_body = unique_msg_id.encode("ascii") + b"\0"
+            # 3. Process Valid Message
+            unique_msg_id = await self.generate_message_id()
+
+            try:
+                await self.save_and_bill_sms_transaction(
+                    client_obj,
+                    route_data,
+                    destination_addr,
+                    short_message,
+                    encoding_type,
+                    total_segments,
+                    total_chars,
+                    source_addr,
+                    route_data["smpp"],
+                    route_data["vendor"],
+                    unique_msg_id,
+                    final_concat_ref,
+                    final_send_dlr_decision,
+                )
+                processed_ids.append(unique_msg_id)
+                logger.info(f"Queued SMS to {destination_addr} | ID: {unique_msg_id}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to process SMS/Billing for {destination_addr}: {e}"
+                )
+
+        # ==========================================
+        # 6. FINAL CLIENT RESPONSE
+        # ==========================================
+        if processed_ids:
+            # Send back the ID of the last successfully processed message
+            last_msg_id = processed_ids[-1]
+            resp_body = last_msg_id.encode("ascii") + b"\0"
             await self.send_pdu(
                 writer, CMD_SUBMIT_SM_RESP, ESME_ROK, seq_num, resp_body
             )
-            return unique_msg_id
-        except Exception as e:
-            logger.error(f"Failed to process SMS/Billing: {e}")
-            await self.send_error_with_tlv(
-                writer, seq_num, error_msg="Internal Gateway Error. Please retry."
+            return last_msg_id
+        else:
+            # If the loop finished but 0 numbers were valid/routed, reject the packet
+            logger.warning(
+                f"Bulk SMS rejected. No valid or routable numbers found in: {raw_destination_addr}"
             )
-            # await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000045, seq_num, b"")
+            await self.send_error_with_tlv(
+                writer, seq_num, error_msg="Invalid Destination(s) or Route."
+            )
             return None
 
     # @sync_to_async
