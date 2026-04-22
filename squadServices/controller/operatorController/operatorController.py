@@ -28,7 +28,6 @@ class OperatorFilter(django_filters.FilterSet):
     )
     name = django_filters.CharFilter(lookup_expr="icontains")
     operatorCode = django_filters.CharFilter(lookup_expr="icontains")
-    MNC = django_filters.CharFilter(lookup_expr="icontains")
     status = django_filters.CharFilter(lookup_expr="icontains")
     createdAt = django_filters.DateFromToRangeFilter()
 
@@ -39,7 +38,6 @@ class OperatorFilter(django_filters.FilterSet):
             "name",
             "operatorCode",
             "status",
-            "MNC",
             "createdAt",
         ]
 
