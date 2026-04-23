@@ -354,7 +354,12 @@ class Command(BaseCommand):
 
     async def send_dlr(self, writer, sms_info, fullmsg, msg_id, dlr_seq, dlr_status):
         timestamp = datetime.datetime.now().strftime("%y%m%d%H%M")
-        full_safe_text = sms_info["text"].encode("ascii", "ignore").decode("ascii")
+
+        # 1. Truncate the safe text to ensure the total DLR doesn't exceed 255
+        # We leave about 100 chars for the headers (id, stat, date, etc.)
+        full_safe_text = (
+            sms_info["text"].encode("ascii", "ignore").decode("ascii")[:150]
+        )
 
         if dlr_status == "DELIVRD":
             dlr_text = f"id:{msg_id} sub:001 dlvrd:001 submit date:{timestamp} done date:{timestamp} stat:{dlr_status} err:000 text:{full_safe_text}"
@@ -363,13 +368,16 @@ class Command(BaseCommand):
 
         dlr_bytes = dlr_text.encode("ascii", errors="ignore")
 
+        # 2. Final safety check: hard truncate bytes to 255
+        dlr_bytes = dlr_bytes[:255]
+
         body = b"\0"
         body += b"\x01\x01" + sms_info["dest"].encode("ascii", "ignore") + b"\0"
         body += b"\x01\x01" + sms_info["source"].encode("ascii", "ignore") + b"\0"
         body += b"\x04"  # esm_class: Delivery Receipt
         body += b"\0" * 7
         body += b"\0"
-        body += struct.pack("B", len(dlr_bytes))
+        body += struct.pack("B", len(dlr_bytes))  # Now len is guaranteed <= 255
         body += dlr_bytes
 
         await self.send_pdu(writer, CMD_DELIVER_SM, ESME_ROK, dlr_seq, body)
