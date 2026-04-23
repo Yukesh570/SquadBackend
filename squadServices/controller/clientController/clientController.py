@@ -358,5 +358,5 @@ class ClientSessionViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         module = self.kwargs.get("module", "sms_reports")
-        # check_permission(self, "read", module)
+        check_permission(self, "read", module)
         return super().get_queryset()

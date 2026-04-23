@@ -274,6 +274,7 @@ class ClientSession(models.Model):
 
     class Meta:
         db_table = "clientSessions"
+        ordering = ["-connectedAt"]
 
     def __str__(self):
         return f"{self.systemId} ({self.remoteIp}:{self.remotePort})"
