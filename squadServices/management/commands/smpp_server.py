@@ -528,12 +528,12 @@ class Command(BaseCommand):
                         )
                         client_port = addr[1]
 
-                        # 🟢 ADD THIS: Flip the database switch to ONLINE
+                        # ADD THIS: Flip the database switch to ONLINE
                         client_obj.bindStatus = "ONLINE"
                         await sync_to_async(client_obj.save)(
                             update_fields=["bindStatus"]
                         )
-                        # 🚀 BROADCAST ONLINE STATUS TO FRONTEND
+                        # BROADCAST ONLINE STATUS TO FRONTEND THAT A SESSION IS CREATED
                         channel_layer = get_channel_layer()
                         await channel_layer.group_send(
                             "dashboard_updates",

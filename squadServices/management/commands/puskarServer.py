@@ -95,6 +95,32 @@ class Command(BaseCommand):
                 logger.warning(f"Dropping stale message segments for Ref: {ref}")
                 del self.message_store[ref]
 
+    async def process_and_receipt(
+        self, writer, sms_info, msg_id_str, seq_num, clientdata, client_dlr_status
+    ):
+        """Runs the HTTP request and sends the DLR in the background."""
+        response = await self.callApi(
+            sms_info["text"],
+            sms_info["dest"],
+            clientdata,
+            client_dlr_status,
+        )
+        # print(f"Webhook Response Status: {response.status_code}")
+
+        if response.status_code == 406:
+            logger.warning("SQUAD SERVER REJECTED MESSAGE: Subscription Expired")
+            return  # Skip sending DLR
+
+        # Send Success DLR
+        await self.send_dlr(
+            writer,
+            sms_info,
+            sms_info["text"],
+            msg_id_str,
+            seq_num + 1000,
+            client_dlr_status,
+        )
+
     @sync_to_async
     def authenticate_client(self, username, password):
         """Strictly handles authentication via Django ORM."""
@@ -149,6 +175,8 @@ class Command(BaseCommand):
 
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info("peername")
+        # ADD THIS: Give this specific connection its own traffic light
+        writer.write_lock = asyncio.Lock()
         server_info = writer.get_extra_info("sockname")
         server_port = server_info[1]
 
@@ -217,9 +245,9 @@ class Command(BaseCommand):
                     # Handle Segmented Messages
                     if sms_info.get("is_segmented"):
                         ref = sms_info["ref_num"]
-
-                        if ref not in self.message_store:
-                            self.message_store[ref] = {
+                        store_key = f"{sms_info['source']}_{sms_info['dest']}_{ref}"
+                        if store_key not in self.message_store:
+                            self.message_store[store_key] = {
                                 "total": sms_info["total_parts"],
                                 "parts": {},
                                 "source": sms_info["source"],
@@ -227,23 +255,23 @@ class Command(BaseCommand):
                                 "timestamp": time.time(),
                             }
 
-                        self.message_store[ref]["parts"][sms_info["part_num"]] = (
+                        self.message_store[store_key]["parts"][sms_info["part_num"]] = (
                             sms_info["text"]
                         )
 
                         if (
-                            len(self.message_store[ref]["parts"])
-                            == self.message_store[ref]["total"]
+                            len(self.message_store[store_key]["parts"])
+                            == self.message_store[store_key]["total"]
                         ):
                             # Reassemble
                             full_text = "".join(
                                 [
-                                    self.message_store[ref]["parts"][i]
+                                    self.message_store[store_key]["parts"][i]
                                     for i in range(1, sms_info["total_parts"] + 1)
                                 ]
                             )
                             sms_info["text"] = full_text
-                            del self.message_store[ref]  # Clean memory
+                            del self.message_store[store_key]  # Clean memory
                         else:
                             # Send partial ack
                             await self.send_pdu(
@@ -254,14 +282,21 @@ class Command(BaseCommand):
                                 msg_id_str.encode() + b"\0",
                             )
                             logger.debug(
-                                f"Received part {sms_info['part_num']} of {sms_info['total_parts']} (Ref: {ref})"
+                                f"Received part {sms_info['part_num']} of {sms_info['total_parts']} (StoreKey: {store_key})"
                             )
                             continue
+                    dest = sms_info["dest"]
+                    # masked_dest = (
+                    #     f"{dest[:5]}****{dest[-3:]}" if len(dest) > 8 else "***"
+                    # )
 
+                    msg_length = len(sms_info["text"])
                     # Message is Complete
                     logger.info(
-                        f"COMPLETE MESSAGE | From: {sms_info['source']} | To: {sms_info['dest']} | Msg: {sms_info['text']}"
+                        f"MSG PROCESSED | From: {sms_info['source']} | To: {dest} | Length: {msg_length} chars"
                     )
+                    # 3. Log full text ONLY at DEBUG level
+                    # logger.debug(f"Full Message Content: {sms_info['text']}")
 
                     # Send Submit_SM_Resp
                     await self.send_pdu(
@@ -272,28 +307,17 @@ class Command(BaseCommand):
                         msg_id_str.encode() + b"\0",
                     )
 
-                    # Fire API Call concurrently
-                    response = await self.callApi(
-                        sms_info["text"],
-                        sms_info["dest"],
-                        clientdata,
-                        client_dlr_status,
-                    )
-
-                    if response.status_code == 406:
-                        logger.warning(
-                            "SQUAD SERVER REJECTED MESSAGE: Subscription Expired"
+                    # 🚀 FIRE AND FORGET! This runs in the background.
+                    # The server immediately loops back to read the next SMPP packet!
+                    asyncio.create_task(
+                        self.process_and_receipt(
+                            writer,
+                            sms_info,
+                            msg_id_str,
+                            seq_num,
+                            clientdata,
+                            client_dlr_status,
                         )
-                        continue
-
-                    # Send Success DLR
-                    await self.send_dlr(
-                        writer,
-                        sms_info,
-                        sms_info["text"],
-                        msg_id_str,
-                        seq_num + 1000,
-                        client_dlr_status,
                     )
 
                 elif cmd_id == CMD_ENQUIRE_LINK:
@@ -357,9 +381,7 @@ class Command(BaseCommand):
 
         # 1. Truncate the safe text to ensure the total DLR doesn't exceed 255
         # We leave about 100 chars for the headers (id, stat, date, etc.)
-        full_safe_text = (
-            sms_info["text"].encode("ascii", "ignore").decode("ascii")[:150]
-        )
+        full_safe_text = sms_info["text"].encode("ascii", "ignore").decode("ascii")[:40]
 
         if dlr_status == "DELIVRD":
             dlr_text = f"id:{msg_id} sub:001 dlvrd:001 submit date:{timestamp} done date:{timestamp} stat:{dlr_status} err:000 text:{full_safe_text}"
@@ -385,8 +407,10 @@ class Command(BaseCommand):
     async def send_pdu(self, writer, cmd_id, status, seq, body):
         length = 16 + len(body)
         header = struct.pack(">IIII", length, cmd_id, status, seq)
-        writer.write(header + body)
-        await writer.drain()
+        # ADD THIS: Wait for the green light before writing to the socket
+        async with writer.write_lock:
+            writer.write(header + body)
+            await writer.drain()
 
     def read_c_string(self, data, offset):
         end = data.find(b"\0", offset)
