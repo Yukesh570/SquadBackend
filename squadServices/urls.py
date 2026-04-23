@@ -16,6 +16,7 @@ from squadServices.controller.campaignController import (
 )
 from squadServices.controller.clientController.clientController import (
     ClientPolicyViewSet,
+    ClientSessionViewSet,
     ClientViewSet,
     IpWhiteListViewSet,
     PuskarClientViewSet,
@@ -739,6 +740,14 @@ urlpatterns = [
     path(
         "dlrEvent/<str:module>/",
         DLREventViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+    ),
+    path(
+        "clientSession/<str:module>/",
+        ClientSessionViewSet.as_view(
             {
                 "get": "list",
             }

@@ -2,7 +2,8 @@ from django.conf import settings
 from django.db import models
 
 from squadServices.models.company import Company
-
+from django.utils import timezone
+import uuid
 
 STATUS_CHOICES = [
     ("ACTIVE", "active"),
@@ -249,3 +250,30 @@ class PuskarClient(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ClientSession(models.Model):
+    # Generates a unique 64-char ID automatically if none is provided
+    sessionId = models.CharField(max_length=64, primary_key=True, default=uuid.uuid4)
+    # Links directly to your existing Client model
+    client = models.ForeignKey(
+        "Client", on_delete=models.CASCADE, related_name="active_sessions"
+    )
+    systemId = models.CharField(max_length=50)
+
+    # E.g., 'TRANSMITTER', 'RECEIVER', 'TRANSCEIVER'
+    bindType = models.CharField(max_length=20)
+
+    remoteIp = models.CharField(max_length=45)
+    remotePort = models.IntegerField()
+
+    connectedAt = models.DateTimeField(default=timezone.now)
+    boundAt = models.DateTimeField(default=timezone.now)
+    last_activityAt = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=20, default="ONLINE")
+
+    class Meta:
+        db_table = "clientSessions"
+
+    def __str__(self):
+        return f"{self.systemId} ({self.remoteIp}:{self.remotePort})"

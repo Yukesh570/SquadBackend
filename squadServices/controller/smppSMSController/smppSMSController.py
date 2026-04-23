@@ -127,7 +127,7 @@ class SMSMessagePartViewSet(viewsets.ReadOnlyModelViewSet):
         module = self.kwargs.get(
             "module", "sms_reports"
         )  # Fallback to a default module name if not provided
-        # check_permission(self, "read", module)
+        check_permission(self, "read", module)
         return super().get_queryset()
 
 
@@ -163,7 +163,7 @@ class MessageAttemptViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         module = self.kwargs.get("module", "sms_reports")
-        # check_permission(self, "read", module)
+        check_permission(self, "read", module)
         return super().get_queryset()
 
 
@@ -199,5 +199,5 @@ class DLREventViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         module = self.kwargs.get("module", "sms_reports")
-        # check_permission(self, "read", module)
+        check_permission(self, "read", module)
         return super().get_queryset()

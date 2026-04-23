@@ -15,6 +15,7 @@ import uuid
 
 class SMSMessage(models.Model):
     STATUS_CHOICES = (
+        ("pending", "Pending"),
         ("queued", "Queued"),
         ("submitted", "Submitted"),
         ("failed", "Failed"),
@@ -124,6 +125,7 @@ class SMSMessage(models.Model):
 
 class SMSMessagePart(models.Model):
     STATUS_CHOICES = (
+        ("PENDING", "Pending"),
         ("QUEUED", "Queued"),
         ("DELIVERED", "Delivered"),
         ("SUBMITTED", "Submitted"),

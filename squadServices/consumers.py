@@ -24,3 +24,22 @@ class DashboardConsumer(AsyncWebsocketConsumer):
         await self.send(
             text_data=json.dumps({"username": username, "status": new_status})
         )
+
+    # Catches the 'session_change' event from the SMPP server
+    async def session_change(self, event):
+        # Send message to WebSocket (Frontend)
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "action": "session_update",  # Tell the frontend JS what to do
+                    "session": {
+                        "id": event["session_id"],
+                        "systemId": event["system_id"],
+                        "ip": event["ip"],
+                        "port": event["port"],
+                        "bindType": event["bind_type"],
+                        "status": event["status"],
+                    },
+                }
+            )
+        )

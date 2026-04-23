@@ -20,6 +20,7 @@ import django_filters
 from squadServices.models.clientModel.client import (
     Client,
     ClientPolicy,
+    ClientSession,
     IpWhitelist,
     PuskarClient,
 )
@@ -34,6 +35,9 @@ from squadServices.serializer.clientSerializer.clientSerializer import (
 from rest_framework.permissions import AllowAny
 
 from squadServices.serializer.vendorClientPolicySerializer import ClientPolicySerializer
+from squadServices.serializer.vendorClientSessionSerializer import (
+    ClientSessionSerializer,
+)
 
 
 class ClientFilter(ExtendedFilterSet):
@@ -322,3 +326,37 @@ class ClientPolicyViewSet(viewsets.ModelViewSet):
         instance.updatedBy = user
         instance.save()
         log_action_delete(user, "ClientPolicy", f"{instance.client.name} Policy")
+
+
+class ClientSessionFilter(ExtendedFilterSet):
+
+    class Meta:
+        model = ClientSession
+        fields = {
+            "client__name": ["exact", "icontains", "isnull"],
+            "sessionId": ["exact", "icontains", "isnull"],
+            "systemId": ["exact", "icontains", "isnull"],
+            "bindType": ["exact", "icontains", "isnull"],
+            "remoteIp": ["exact", "icontains", "isnull"],
+            "remotePort": ["exact", "icontains", "isnull"],
+            "status": ["exact", "icontains", "isnull"],
+            "connectedAt": ["exact", "gt", "lt", "range", "isnull"],
+            "boundAt": ["exact", "gt", "lt", "range", "isnull"],
+            "last_activityAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
+
+
+class ClientSessionViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only view for ClientSession"""
+
+    queryset = ClientSession.objects.all()
+    serializer_class = ClientSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = ClientSessionFilter
+
+    def get_queryset(self):
+        module = self.kwargs.get("module", "sms_reports")
+        # check_permission(self, "read", module)
+        return super().get_queryset()

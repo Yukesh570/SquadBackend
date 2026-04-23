@@ -2,7 +2,12 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
 from squadServices.models.campaign import Campaign, CampaignContact, Template
-from squadServices.models.clientModel.client import Client, ClientPolicy, IpWhitelist
+from squadServices.models.clientModel.client import (
+    Client,
+    ClientPolicy,
+    ClientSession,
+    IpWhitelist,
+)
 from squadServices.models.company import Company, CompanyCategory, CompanyStatus
 from django.utils.html import format_html
 
@@ -1240,6 +1245,14 @@ class ClientPolicyAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+
+@admin.register(ClientSession)
+class ClientSessionAdmin(admin.ModelAdmin):
+    list_display = ("systemId", "remoteIp", "bindType", "status", "last_activityAt")
+    list_filter = ("status", "bindType")
+    search_fields = ("systemId", "remoteIp")
+    readonly_fields = ("connectedAt", "boundAt", "last_activityAt")
 
 
 @admin.register(OperatorNetworkCode)

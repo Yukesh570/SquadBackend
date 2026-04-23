@@ -12,8 +12,11 @@ from asgiref.sync import sync_to_async
 from django.utils import timezone
 from squadServices.helper.checkNumber import clean_phone_number
 from squadServices.helper.routeAndCostHelper import get_route_and_cost
-from squadServices.helper.smsSplitter import create_message_parts
-from squadServices.models.clientModel.client import Client, IpWhitelist
+from squadServices.helper.smsSplitter import (
+    create_message_parts,
+    create_message_parts_when_failed,
+)
+from squadServices.models.clientModel.client import Client, ClientSession, IpWhitelist
 from squadServices.models.connectivityModel.smpp import SMPP
 import secrets
 from squadServices.models.connectivityModel.verdor import Vendor
@@ -127,6 +130,52 @@ class Command(BaseCommand):
                 return math.ceil(length / 67), length
 
     @sync_to_async
+    def save_failed_routing_attempt(
+        self,
+        client_obj,
+        destination_addr,
+        short_message,
+        encoding_type,
+        total_segments,
+        total_chars,
+        source_addr,
+        unique_msg_id,
+        error_reason,
+        want_dlr,
+    ):
+        now = timezone.now()
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("!!!!!!22323232ppppp!!!!!!!!!!!!!!!!!!!!!!!!!!!!", client_obj)
+
+        # 1. Create the parent message as FAILED (Same as before)
+        msg = SMSMessage.objects.create(
+            client=client_obj,
+            systemId=client_obj.smppUsername,
+            message_id=unique_msg_id,
+            characterCount=total_chars,
+            destination=destination_addr,
+            text=short_message,
+            encoding=encoding_type,
+            segmentNumber=total_segments,
+            status="failed",  # ⚡️ Starts and ends as failed
+            failure_reason=error_reason,
+            failed_at=now,
+            queued_at=now,
+            sendClientDlr=want_dlr,
+        )
+        print("!!!!!222!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+        print("!!!!3333!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+        # 3. ⚡️ CALL YOUR MAGIC FUNCTION ⚡️
+        create_message_parts_when_failed(
+            sms_message_obj=msg,
+            text=short_message,
+            initial_status="FAILED",
+            fail_reason=error_reason,
+        )
+
+    @sync_to_async
     def check_ip_whitelist(self, ip_address, client_obj=None):
         """
         If client_obj is provided, check if the IP belongs to that specific client.
@@ -159,7 +208,8 @@ class Command(BaseCommand):
 
         for msg in stale_msgs:
             msg.status = "failed"
-            msg.save(update_fields=["status"])
+            msg.failure_reason = "Reaper Timeout: Message was stuck in queue too long."  # Update failure_reason
+            msg.save(update_fields=["status", "failure_reason"])
             # 2. ---> NEW: Instantly fail all associated parts <---
             # This prevents the background worker from ever picking them up
             SMSMessagePart.objects.filter(message=msg).update(
@@ -207,6 +257,38 @@ class Command(BaseCommand):
             logger.error(f"Auth Lookup Error for '{username}': {e}")
             return None
 
+    @sync_to_async
+    def register_client_session(self, client_obj, system_id, bind_cmd_id, ip, port):
+        """Creates a new session row when a client successfully binds."""
+        bind_map = {
+            0x00000001: "RECEIVER",
+            0x00000002: "TRANSMITTER",
+            0x00000009: "TRANSCEIVER",
+        }
+        bind_type = bind_map.get(bind_cmd_id, "UNKNOWN")
+
+        session = ClientSession.objects.create(
+            client=client_obj,
+            systemId=system_id,
+            bindType=bind_type,
+            remoteIp=ip,
+            remotePort=port,
+            status="ONLINE",
+        )
+        return session.sessionId
+
+    @sync_to_async
+    def update_session_activity(self, session_id):
+        """Updates the last_activityAt timestamp when a heartbeat is received."""
+        if session_id:
+            ClientSession.objects.filter(sessionId=session_id).update(status="ONLINE")
+
+    @sync_to_async
+    def close_client_session(self, session_id):
+        """Marks the session as OFFLINE when the socket closes."""
+        if session_id:
+            ClientSession.objects.filter(sessionId=session_id).update(status="OFFLINE")
+
     def handle(self, *args, **kwargs):
         self.stdout.write(f"Starting SMPP Server on {HOST}:{PORT}...")
         try:
@@ -226,15 +308,49 @@ class Command(BaseCommand):
         self.redis_client = redis.Redis(
             host=redis_host, port=6379, db=1, decode_responses=True
         )
+        # Even if 1,000 clients are connected to your server at the same time, the server doesn't get confused
+        # When a new client connects, the Python asyncio library creates a unique instance
+        # of a StreamWriter just for that specific socket.
+        # Client A connects The server runs handle_client and gives it writer_A.
+        # Client B connects The server runs a separate instance of handle_client and gives it writer_B
         server = await asyncio.start_server(self.handle_client, HOST, PORT)
         # --- 2. START THE BACKGROUND LOOP HERE ---
         asyncio.create_task(self.dlr_dispatcher_loop())
         async with server:
             await server.serve_forever()
 
+    async def broadcast_session_update(
+        self, session_id, system_id, ip, port, bind_cmd_id, status
+    ):
+        """Broadcasts live session changes to the Django Channels WebSocket."""
+        from channels.layers import get_channel_layer
+
+        # Map the command ID to a readable bind type for the frontend
+        bind_map = {
+            0x00000001: "RECEIVER",
+            0x00000002: "TRANSMITTER",
+            0x00000009: "TRANSCEIVER",
+        }
+        bind_type = bind_map.get(bind_cmd_id, "UNKNOWN")
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            "dashboard_updates",
+            {
+                "type": "session_change",  # ⚡️ Triggers session_change in consumers.py
+                "session_id": str(session_id),
+                "system_id": system_id,
+                "ip": ip,
+                "port": port,
+                "bind_type": bind_type,
+                "status": status,
+            },
+        )
+
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info("peername")
         client_ip = addr[0]
+        client_port = addr[1]
         logger.info(f"New connection from {addr}")
         # --- 3. TRACK THE SYSTEM ID ---
         system_id_logged_in = None
@@ -244,6 +360,8 @@ class Command(BaseCommand):
                 # 1. Read SMPP Header
                 header_data = await reader.read(16)
                 if not header_data or len(header_data) < 16:
+
+                    # it then goes to finally
                     break
 
                 cmd_len, cmd_id, cmd_status, seq_num = struct.unpack(
@@ -392,7 +510,24 @@ class Command(BaseCommand):
                         # writer.vendor_obj = vendor_obj
                         # writer.smpp_obj = smpp_obj
                         system_id_logged_in = system_id
+                        current_session_id = await self.register_client_session(
+                            client_obj, system_id, cmd_id, client_ip, client_port
+                        )
+                        # when you run this db_session_id it is not saving in the global variable it is saving it in a isolated writer created specifically
+                        # for that client connection, so when the next client connects it new writer
+                        writer.db_session_id = current_session_id
                         self.active_clients[system_id] = writer
+                        # 🚀 FIRE THE WEBSOCKET (Session Table Update)
+                        await self.broadcast_session_update(
+                            current_session_id,
+                            system_id,
+                            client_ip,
+                            client_port,
+                            cmd_id,
+                            "ONLINE",
+                        )
+                        client_port = addr[1]
+
                         # 🟢 ADD THIS: Flip the database switch to ONLINE
                         client_obj.bindStatus = "ONLINE"
                         await sync_to_async(client_obj.save)(
@@ -465,6 +600,9 @@ class Command(BaseCommand):
                     await self.send_pdu(
                         writer, CMD_ENQUIRE_LINK_RESP, ESME_ROK, seq_num, b""
                     )
+                    db_sess_id = getattr(writer, "db_session_id", None)
+                    if db_sess_id:
+                        await self.update_session_activity(db_sess_id)
 
                 # i commented Because your script is acting as the SMPP Server, it should never accept a Delivery Receipt from a client. If they send one, it will now fall into the else: block and your server will correctly reject it with a Generic NACK error.
                 # he DELIVER_SM command only flows in one direction: From the Server to the Client.
@@ -489,6 +627,22 @@ class Command(BaseCommand):
             if system_id_logged_in and system_id_logged_in in self.active_clients:
                 del self.active_clients[system_id_logged_in]
 
+            # offline the client session in the database when they disconnect
+            db_sess_id = getattr(writer, "db_session_id", None)
+            if db_sess_id:
+                await self.close_client_session(db_sess_id)
+                # 🚀 FIRE THE WEBSOCKET (Session Table Update)
+                old_cmd_id = getattr(
+                    writer, "bind_cmd_id", 0
+                )  # Grab the bind type we saved earlier
+                await self.broadcast_session_update(
+                    db_sess_id,
+                    system_id_logged_in,
+                    client_ip,
+                    addr[1],
+                    old_cmd_id,
+                    "OFFLINE",
+                )
             # 🔴 ADD THIS: Flip the database switch back to OFFLINE
             client_obj = getattr(writer, "client_obj", None)
             if client_obj:
@@ -1162,6 +1316,7 @@ class Command(BaseCommand):
             if not validated_number:
                 logger.warning(f"Skipping invalid bulk number: {current_raw_num}")
                 continue
+            unique_msg_id = await self.generate_message_id()
 
             destination_addr = validated_number.replace("+", "")
 
@@ -1174,10 +1329,25 @@ class Command(BaseCommand):
                 logger.warning(
                     f"Routing/Billing Failed for {destination_addr}: {routing_error}"
                 )
+                # ⚡️ NEW: Save it to the DB as FAILED. Do not bill the user.
+                await self.save_failed_routing_attempt(
+                    client_obj,
+                    destination_addr,
+                    short_message,
+                    encoding_type,
+                    total_segments,
+                    total_chars,
+                    source_addr,
+                    unique_msg_id,
+                    routing_error,
+                    final_send_dlr_decision,
+                )
+                # We still append the ID so the client gets a "success" response
+                # (meaning "we accepted your request, but it failed immediately")
+                processed_ids.append(unique_msg_id)
                 continue
 
             # 3. Process Valid Message
-            unique_msg_id = await self.generate_message_id()
 
             try:
                 await self.save_and_bill_sms_transaction(
