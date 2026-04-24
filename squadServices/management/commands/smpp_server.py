@@ -303,6 +303,9 @@ class Command(BaseCommand):
 
         # 🧹 Reset everyone to OFFLINE on server boot to prevent Zombies
         await sync_to_async(Client.objects.all().update)(bindStatus="OFFLINE")
+        await sync_to_async(ClientSession.objects.filter(status="ONLINE").update)(
+            status="OFFLINE"
+        )
         redis_host = os.environ.get("REDIS_HOST", "redis")
         # ⚡️ Using DB=1 keeps our SMPP buffer strictly separated from Celery (DB=0)
         self.redis_client = redis.Redis(
