@@ -204,12 +204,13 @@ class currencyAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "name",
-        "country",
+        "currencyCode",
+        "numericCode",
+        "symbol",
+        "decimalPlaces",
+        "isActive",
         "isDeleted",
         "createdAt",
-        "updatedAt",
-        "createdBy",
-        "updatedBy",
     )
     search_fields = ("name",)
     readonly_fields = ("createdAt", "updatedAt")

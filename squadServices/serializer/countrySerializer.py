@@ -17,11 +17,19 @@ class StateSerializer(serializers.ModelSerializer):
 
 
 class CurrencySerializer(serializers.ModelSerializer):
-    countryName = serializers.CharField(source="country.name", read_only=True)
 
     class Meta:
         model = Currency
-        fields = ["id", "name", "country", "countryName"]
+        fields = [
+            "id",
+            "name",
+            "currencyCode",
+            "numericCode",
+            "symbol",
+            "decimalPlaces",
+            "isActive",
+            "createdAt",
+        ]
 
 
 class EntitySerializer(serializers.ModelSerializer):

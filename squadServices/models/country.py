@@ -65,10 +65,13 @@ class State(models.Model):
 
 
 class Currency(models.Model):
-    country = models.ForeignKey(
-        Country, on_delete=models.CASCADE, related_name="currencies"
-    )
+
     name = models.CharField(max_length=100)
+    currencyCode = models.CharField(max_length=50, null=True, blank=True)
+    numericCode = models.CharField(max_length=10, null=True, blank=True)
+    symbol = models.CharField(max_length=10, null=True, blank=True)
+    decimalPlaces = models.IntegerField(default=2, null=True, blank=True)
+    isActive = models.BooleanField(default=True)
     isDeleted = models.BooleanField(default=False)
     createdAt = models.DateTimeField(auto_now_add=True)
     updatedAt = models.DateTimeField(auto_now=True)

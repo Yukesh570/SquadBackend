@@ -194,15 +194,20 @@ class StateViewSet(viewsets.ModelViewSet):
         log_action_delete(user, "State", instance.name)
 
 
-class CurrencyFilter(django_filters.FilterSet):
-    name = django_filters.CharFilter(lookup_expr="icontains")
-    country_name = django_filters.CharFilter(
-        field_name="country__name", lookup_expr="icontains"
-    )
-
+class CurrencyFilter(ExtendedFilterSet):
     class Meta:
         model = Currency
-        fields = ["name", "country_name"]
+        # Define the fields and their allowed standard lookups
+        fields = {
+            # TEXT FIELDS: Support Equals, Contains, Is Empty
+            "name": ["exact", "icontains", "isnull"],
+            "currencyCode": ["exact", "icontains", "isnull"],
+            "numericCode": ["exact", "icontains", "isnull"],
+            "symbol": ["exact", "icontains", "isnull"],
+            "decimalPlaces": ["exact", "icontains"],
+            "isActive": ["exact"],
+            "createdAt": ["exact", "range", "gt", "lt"],
+        }
 
 
 class CurrencyViewSet(viewsets.ModelViewSet):
@@ -225,12 +230,7 @@ class CurrencyViewSet(viewsets.ModelViewSet):
         module = self.kwargs.get("module")
         user = self.request.user
         check_permission(self, "write", module)
-        country = serializer.validated_data.get("country")
-        exist = Currency.objects.filter(country=country, isDeleted=False)
-        if exist.exists():
-            raise ValidationError(
-                {"error": "Currency for the selected country already exists."}
-            )
+
         serializer.save(createdBy=user, updatedBy=user)
         log_action_create(user, "Currency", serializer.validated_data.get("name"))
 
