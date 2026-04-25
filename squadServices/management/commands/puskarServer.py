@@ -10,7 +10,7 @@ from asgiref.sync import sync_to_async
 from django.db.models import Q
 
 # Replace this with your actual app import
-from squadServices.models.clientModel.client import Client, PuskarClient
+from squadServices.models.clientModel.client import PuskarClient
 
 # --- Configuration ---
 HOST = "0.0.0.0"
@@ -43,6 +43,33 @@ class Command(BaseCommand):
     # In-memory store for concatenated messages
     message_store = {}
     MESSAGE_TIMEOUT = 300
+    # Add this at the top of the class under MESSAGE_TIMEOUT
+    api_queue = asyncio.Queue()
+
+    # Add this new function anywhere in your Command class
+    async def api_worker(self):
+        """Background worker that continuously pulls from the queue and hits the API."""
+        while True:
+            # Wait until a message is put into the queue
+            payload = await self.api_queue.get()
+            try:
+                response = await self.callApi(
+                    payload["text"],
+                    payload["dest"],
+                    payload["source"],
+                    payload["status"],
+                )
+                # print("API Response Status:", response.status_code)
+
+                if response.status_code == 406:
+                    logger.warning(
+                        f"REJECTED | Subscription Expired for To: {payload['dest']}"
+                    )
+            except Exception as e:
+                logger.error(f"Worker API Error: {e}")
+            finally:
+                # Tell the queue this task is finished
+                self.api_queue.task_done()
 
     def handle(self, *args, **kwargs):
         self.stdout.write(self.style.SUCCESS(f"Starting SMPP Server..."))
@@ -62,7 +89,7 @@ class Command(BaseCommand):
         self.http_session = aiohttp.ClientSession(connector=connector, timeout=timeout)
 
         cleanup_task = asyncio.create_task(self.cleanup_stale_messages())
-
+        workers = [asyncio.create_task(self.api_worker()) for _ in range(50)]
         server1 = await asyncio.start_server(self.handle_client, HOST, PORT)
         server2 = await asyncio.start_server(self.handle_client, HOST1, PORT1)
 
@@ -75,6 +102,8 @@ class Command(BaseCommand):
                 await asyncio.gather(server1.serve_forever(), server2.serve_forever())
         finally:
             cleanup_task.cancel()
+            for w in workers:
+                w.cancel()
             await self.http_session.close()
 
     async def cleanup_stale_messages(self):
@@ -93,7 +122,6 @@ class Command(BaseCommand):
                 del self.message_store[ref]
 
     async def callApi(self, sms_text, destination, source, client_dlr_status):
-        """Sends the HTTP webhook with latency tracking."""
         api = (
             "https://boss.arssapp.com/sms_test/api/sms/deliverAdd"
             if client_dlr_status == "DELIVRD"
@@ -103,23 +131,25 @@ class Command(BaseCommand):
         payload = {
             "messageContent": sms_text,
             "toUser": destination,
-            "userID": source.id,
+            "userID": source.id,  # MAKE SURE THIS IS NOT NULL!
         }
 
         start_time = time.time()
         try:
+            # Use json=payload if they want JSON, data=payload if they want Form Data
             async with self.http_session.post(api, json=payload) as res:
-                await res.read()
+                response_text = await res.text()  # ⚡️ READ THE ACTUAL BODY
                 duration = time.time() - start_time
 
-                # ⚡️ DEBUG: Identifying slow API responses
+                # ⚡️ PRINT THE RAW RESPONSE FROM THEIR SERVER
+                print(f"API Reply for {destination}: {res.status} - {response_text}")
+
                 if duration > 2.0:
-                    logger.warning(
-                        f"🐢 SLOW API | {duration:.2f}s | To: {destination} | Status: {res.status}"
-                    )
+                    logger.warning(f"🐢 SLOW API | {duration:.2f}s | To: {destination}")
 
                 class DummyResponse:
                     status_code = res.status
+                    text = response_text
 
                 return DummyResponse()
 
@@ -139,37 +169,6 @@ class Command(BaseCommand):
                 status_code = 500
 
             return DummyResponse()
-
-    async def background_task_wrapper(
-        self, writer, sms_info, msg_id_str, seq_num, clientdata, client_dlr_status
-    ):
-        """Ensures background tasks are logged if they crash."""
-        try:
-            await self.process_and_receipt(
-                writer, sms_info, msg_id_str, seq_num, clientdata, client_dlr_status
-            )
-        except Exception as e:
-            logger.error(f"🚨 TASK CRASH | Msg {msg_id_str} | {str(e)}")
-
-    async def process_and_receipt(
-        self, writer, sms_info, msg_id_str, seq_num, clientdata, client_dlr_status
-    ):
-        response = await self.callApi(
-            sms_info["text"], sms_info["dest"], clientdata, client_dlr_status
-        )
-
-        if response.status_code == 406:
-            logger.warning(f"REJECTED | Subscription Expired for {msg_id_str}")
-            return
-
-        await self.send_dlr(
-            writer,
-            sms_info,
-            sms_info["text"],
-            msg_id_str,
-            seq_num + 1000,
-            client_dlr_status,
-        )
 
     @sync_to_async
     def authenticate_client(self, username, password):
@@ -276,29 +275,39 @@ class Command(BaseCommand):
                                 seq_num,
                                 msg_id_str.encode() + b"\0",
                             )
+                            # when continue hits it goes up to the while true  loop
                             continue
 
                     logger.info(
-                        f"SUCCESS | Processed: {msg_id_str} | To: {sms_info['dest']}"
+                        f"SUCCESS | Processed | To: {sms_info['dest']} | "
+                        f"Len: {len(sms_info['text'])} chars"
                     )
-                    await self.send_pdu(
-                        writer,
-                        CMD_SUBMIT_SM_RESP,
-                        ESME_ROK,
-                        seq_num,
-                        msg_id_str.encode() + b"\0",
-                    )
-
-                    # ⚡️ ASYNC WRAPPER: Fire background task for slow API
-                    asyncio.create_task(
-                        self.background_task_wrapper(
+                    try:
+                        await self.send_pdu(
+                            writer,
+                            CMD_SUBMIT_SM_RESP,
+                            ESME_ROK,
+                            seq_num,
+                            msg_id_str.encode() + b"\0",
+                        )
+                        await self.send_dlr(
                             writer,
                             sms_info,
+                            sms_info["text"],
                             msg_id_str,
-                            seq_num,
-                            client_obj,
+                            seq_num + 1000,
                             client_dlr_status,
                         )
+                    except Exception as e:
+                        pass
+
+                    self.api_queue.put_nowait(
+                        {
+                            "text": sms_info["text"],
+                            "dest": sms_info["dest"],
+                            "source": client_obj,
+                            "status": client_dlr_status,
+                        }
                     )
 
                 elif cmd_id == CMD_ENQUIRE_LINK:
@@ -311,8 +320,13 @@ class Command(BaseCommand):
         except Exception as e:
             logger.error(f"ERROR | Connection {addr}: {e}")
         finally:
-            writer.close()
-            await writer.wait_closed()
+            try:
+                if not writer.is_closing():
+                    writer.close()
+                    # Add a timeout so it doesn't hang if the client vanished
+                    await asyncio.wait_for(writer.wait_closed(), timeout=5.0)
+            except:
+                pass  # F
 
     def parse_submit_sm(self, body):
         offset = 0
@@ -332,6 +346,8 @@ class Command(BaseCommand):
         offset += 1
         msg_bytes = body[offset : offset + sm_len]
         res = {"source": src, "dest": dst, "is_segmented": False, "text": ""}
+
+        # this means that sms is is segmented and has udh header
         if esm_class & 0x40:
             udh_len = msg_bytes[0]
             if udh_len >= 5 and msg_bytes[1] == 0x00:
