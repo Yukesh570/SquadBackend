@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 
 from squadServices.models.country import Country, Currency, Entity, State, TimeZone
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
 
 PERIOD_CHOICES = [
     ("LTD", "Limited"),
@@ -11,6 +13,24 @@ EMAIL_CHOICES = [
     ("CMP", "Company"),
     ("SUP", "Support"),
 ]
+
+
+def validate_comma_separated_emails(value):
+    """Validates that a string of comma-separated emails are all valid."""
+    if not value:
+        return
+
+    # Split by comma and strip whitespace
+    emails = [email.strip() for email in value.split(",")]
+
+    for email in emails:
+        if email:  # Ignore empty strings (e.g., if someone types "a@a.com, ")
+            try:
+                validate_email(email)
+            except ValidationError:
+                raise ValidationError(f"'{email}' is not a valid email address.")
+        else:
+            raise ValidationError("Found an empty email address in the list.")
 
 
 class CompanyCategory(models.Model):
@@ -68,11 +88,37 @@ class Company(models.Model):
     name = models.CharField(max_length=100)
     shortName = models.CharField(max_length=100)
     phone = models.CharField(max_length=20, null=True, blank=True)
-    companyEmail = models.EmailField(null=True, blank=True)
-    supportEmail = models.EmailField(null=True, blank=True)
-    billingEmail = models.EmailField(null=True, blank=True)
-    ratesEmail = models.EmailField(null=True, blank=True)
-    lowBalanceAlertEmail = models.EmailField(null=True, blank=True)
+    companyEmail = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_comma_separated_emails],
+        help_text="Separate multiple emails with a comma.",
+    )
+    supportEmail = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_comma_separated_emails],
+    )
+    billingEmail = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_comma_separated_emails],
+    )
+    ratesEmail = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_comma_separated_emails],
+    )
+    lowBalanceAlertEmail = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        validators=[validate_comma_separated_emails],
+    )
     country = models.ForeignKey(
         Country, on_delete=models.CASCADE, related_name="companys"
     )
@@ -105,8 +151,6 @@ class Company(models.Model):
     vendorCreditLimit = models.DecimalField(
         max_digits=10, decimal_places=4, default=0.00
     )
-
-    # for now.....
 
     usedCustomerCredit = models.DecimalField(
         max_digits=18,

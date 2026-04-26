@@ -14,11 +14,16 @@ from squadServices.helper.action import log_action_import
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.users import UserLog
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 redis_client = redis.StrictRedis.from_url(os.getenv("CELERY_RESULT_BACKEND"))
 
 from squad.task import (
     import_country_task,
+    import_currency_task,
+    import_operator_network_code_task,
     import_operator_task,
     import_vendor_rate_task,
 )
@@ -104,6 +109,145 @@ def operators_csv(request):
         args=[filepath, request.user.id, task_id], task_id=task_id
     )
     log_action_import(request.user, "Operator")
+
+    return Response({"message": "Import started", "task_id": task_id})
+
+
+@extend_schema(
+    description=(
+        "Upload CSV and start Celery import task for currency model.\n\n"
+        "**Expected CSV Headers:**\n"
+        "`name`, `currencyCode`, `numericCode`, `symbol`, `decimalPlaces`"
+    ),
+    request={
+        "multipart/form-data": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "CSV file containing currencies",
+                }
+            },
+            "required": ["file"],
+        }
+    },
+    responses={
+        200: {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string"},
+                "task_id": {"type": "string"},
+            },
+        },
+        400: {"type": "object", "properties": {"error": {"type": "string"}}},
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def currency_csv(request):
+    """
+    Upload CSV and start Celery import task for currency model.
+    """
+
+    file = request.FILES.get("file")
+    if not file:
+        return Response({"error": "CSV file is required"}, status=400)
+    if not file.name.lower().endswith(".csv"):
+        return Response({"error": "Only CSV files are allowed"}, status=400)
+
+    if file.content_type not in [
+        "text/csv",
+        "application/vnd.ms-excel",
+    ]:
+        return Response(
+            {"error": "Invalid file type. Please upload a valid CSV file"}, status=400
+        )
+
+    # Save file temporarily
+    filename = f"currency_{uuid.uuid4().hex}.csv"
+    temp_path = os.path.join(settings.MEDIA_ROOT, "imports")
+    os.makedirs(temp_path, exist_ok=True)
+    filepath = os.path.join(temp_path, filename)
+
+    with open(filepath, "wb") as out:
+        for chunk in file.chunks():
+            out.write(chunk)
+
+    task_id = uuid.uuid4().hex
+    print("Starting currency import with task ID:", task_id)
+    # Trigger Celery task
+    import_currency_task.apply_async(
+        args=[filepath, request.user.id, task_id], task_id=task_id
+    )
+    log_action_import(request.user, "Currency")
+
+    return Response({"message": "Import started", "task_id": task_id})
+
+
+onc_csv_file_param = openapi.Parameter(
+    "file",
+    in_=openapi.IN_FORM,
+    description=(
+        "Upload a CSV file to import Operator Network Codes.\n\n"
+        "**Expected CSV Headers:**\n"
+        "`operator_name`, `country_name`, `MCC`, `MNC`, `networkName`, `networkType`, `isPrimary`, `status`, `effectiveFrom`, `effectiveTo`, `notes`\n\n"
+        "*(Note: Dates must be in YYYY-MM-DD format)*"
+    ),
+    type=openapi.TYPE_FILE,
+    required=True,
+)
+
+
+# 2. Attach the swagger schema to your view (Must be above @api_view!)
+@swagger_auto_schema(
+    method="post",
+    operation_description="Upload CSV and start Celery import task for Operator Network Code model.",
+    manual_parameters=[onc_csv_file_param],
+    consumes=["multipart/form-data"],
+    responses={
+        200: openapi.Response("Import started successfully"),
+        400: openapi.Response("Bad Request (e.g., missing file, wrong format)"),
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def operatorNetworkCode_csv(request):
+    """
+    Upload CSV and start Celery import task for operator network code model.
+    """
+
+    file = request.FILES.get("file")
+    if not file:
+        return Response({"error": "CSV file is required"}, status=400)
+    if not file.name.lower().endswith(".csv"):
+        return Response({"error": "Only CSV files are allowed"}, status=400)
+
+    if file.content_type not in [
+        "text/csv",
+        "application/vnd.ms-excel",
+    ]:
+        return Response(
+            {"error": "Invalid file type. Please upload a valid CSV file"}, status=400
+        )
+
+    # Save file temporarily
+    filename = f"operatorNetworkCode_{uuid.uuid4().hex}.csv"
+    temp_path = os.path.join(settings.MEDIA_ROOT, "imports")
+    os.makedirs(temp_path, exist_ok=True)
+    filepath = os.path.join(temp_path, filename)
+
+    with open(filepath, "wb") as out:
+        for chunk in file.chunks():
+            out.write(chunk)
+
+    task_id = uuid.uuid4().hex
+    print("Starting operator network code import with task ID:", task_id)
+    # Trigger Celery task
+    import_operator_network_code_task.apply_async(
+        args=[filepath, request.user.id, task_id], task_id=task_id
+    )
+    log_action_import(request.user, "Operator Network Code")
 
     return Response({"message": "Import started", "task_id": task_id})
 

@@ -69,7 +69,7 @@ class UserLoginHistoryAdmin(admin.ModelAdmin):
 
 class NavItemAdmin(admin.ModelAdmin):
     model = NavItem
-    list_display = ("label", "url", "parent", "order", "is_active")
+    list_display = ("label", "url", "parent", "order", "is_active", "updatedAt")
     ordering = ["order"]
     readonly_fields = ("createdAt", "updatedAt")
 

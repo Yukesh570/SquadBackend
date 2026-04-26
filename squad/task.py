@@ -19,11 +19,11 @@ from django.core.files.storage import default_storage
 from squadServices import models
 from squadServices.models.campaign import CampaignContact
 from squadServices.models.connectivityModel.verdor import Vendor
-from squadServices.models.country import Country
+from squadServices.models.country import Country, Currency
 from squadServices.models.finanace.invoice import ClientInvoice, VendorInvoice
 from squadServices.models.finanace.invoiceSetup import InvoiceSetup
 from squadServices.models.mappingSetup.mappingSetup import MappingSetup
-from squadServices.models.operators.operators import Operators
+from squadServices.models.operators.operators import OperatorNetworkCode, Operators
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.transaction.transaction import (
     TransactionType,
@@ -260,60 +260,76 @@ def import_vendor_rate_task(self, filepath, user_id, task_id, mapping_id):
             total = len(rows)
             user = User.objects.get(id=user_id)
             print("=========!!!!====================")
+            # ⚡️ 1. OUTER TRANSACTION: Opens the temporary workspace
+            with transaction.atomic():
+                for index, row in enumerate(rows, start=1):
 
-            for index, row in enumerate(rows, start=1):
+                    mapped_row = {}
 
-                mapped_row = {}
+                    # Use pre-mapped header mapping
+                    for col, val in row.items():
+                        if col in csv_header_map:
+                            mapped_row[csv_header_map[col]] = val
 
-                # Use pre-mapped header mapping
-                for col, val in row.items():
-                    if col in csv_header_map:
-                        mapped_row[csv_header_map[col]] = val
+                    # Clean numeric fields
+                    for key in ["MCC", "MNC", "rate", "countryCode"]:
+                        if mapped_row.get(key) == "":
+                            mapped_row[key] = None
 
-                # Clean numeric fields
-                for key in ["MCC", "MNC", "rate", "countryCode"]:
-                    if mapped_row.get(key) == "":
-                        mapped_row[key] = None
-
-                # Parse datetime
-                if mapped_row.get("dateTime"):
-                    try:
-                        mapped_row["dateTime"] = parser.parse(mapped_row["dateTime"])
-                    except:
-                        failed.append({"row": index, "error": "Invalid dateTime"})
+                    # Parse datetime
+                    if mapped_row.get("dateTime"):
+                        try:
+                            mapped_row["dateTime"] = parser.parse(
+                                mapped_row["dateTime"]
+                            )
+                        except:
+                            failed.append({"row": index, "error": "Invalid dateTime"})
+                            continue
+                    # Example before serializer.save()
+                    if VendorRate.objects.filter(
+                        ratePlan=mapped_row.get("ratePlan"),
+                    ).exists():
+                        failed.append({"row": index, "error": "Duplicate entry"})
                         continue
-                # Example before serializer.save()
-                if VendorRate.objects.filter(
-                    ratePlan=mapped_row.get("ratePlan"),
-                ).exists():
-                    failed.append({"row": index, "error": "Duplicate entry"})
-                    continue
 
-                serializer = VendorRateImportSerializer(data=mapped_row)
+                    serializer = VendorRateImportSerializer(data=mapped_row)
 
-                if serializer.is_valid():
-                    serializer.save(createdBy=user, updatedBy=user)
-                    created += 1
+                    if serializer.is_valid():
+                        try:
+                            # ⚡️ 2. INNER TRANSACTION: Opens the actual transaction
+                            with transaction.atomic():
+                                serializer.save(createdBy=user, updatedBy=user)
+                                created += 1
+                        except Exception as e:
+                            failed.append({"row": index, "error": str(e)})
+                    else:
+                        failed.append({"row": index, "error": serializer.errors})
+
+                    # Update progress
+                    progress = int((index / total) * 100)
+                    redis_client.set(task_id, str(progress))
+                if failed:
+                    transaction.set_rollback(True)
+                    final_message = (
+                        f"Import failed. 0 of {total} rows saved due to errors."
+                    )
                 else:
-                    failed.append({"row": index, "error": serializer.errors})
+                    final_message = f"Success! {total} rows processed and saved."
 
-                # Update progress
-                redis_client.set(task_id, str(int((index / total) * 100)))
+        redis_client.set(task_id, "100")
+        redis_client.set(
+            f"{task_id}_result",
+            json.dumps({"message": final_message, "errors": failed}),
+        )
+        deleteForLater.apply_async(args=[filepath], countdown=100)
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
+        return "done"
     except Exception as e:
         redis_client.set(task_id, f"error:{str(e)}")
+        deleteForLater.apply_async(args=[filepath], countdown=100)
         return
-
-    redis_client.set(task_id, "100")
-    redis_client.set(
-        f"{task_id}_result",
-        json.dumps({"message": f"{total} rows processed", "errors": failed}),
-    )
-
-    if os.path.exists(filepath):
-        os.remove(filepath)
-
-    return "done"
 
 
 @shared_task(bind=True)
@@ -340,56 +356,72 @@ def import_country_task(self, filepath, user_id, task_id):
                 )
                 return
 
-            for index, row in enumerate(rows, start=1):
-                name = row.get("name", "").strip()
-                code = row.get("countryCode", "").strip()
+            # ⚡️ 1. OUTER TRANSACTION: Opens the temporary workspace
+            with transaction.atomic():
+                for index, row in enumerate(rows, start=1):
+                    name = row.get("name", "").strip()
+                    code = row.get("countryCode", "").strip()
 
-                if not name or not code:
-                    errors.append(
-                        {"row": index, "error": "Missing name or countryCode"}
-                    )
-                    continue
+                    if not name or not code:
+                        errors.append(
+                            {"row": index, "error": "Missing name or countryCode"}
+                        )
+                        continue
 
-                # Check if country already exists (by name or countryCode)
-                if Country.objects.filter(Q(name=name), isDeleted=False).exists():
-                    errors.append(
-                        {
-                            "row": index,
-                            "error": f"Country '{name}'  already exists",
-                        }
-                    )
-                    continue
-                raw_mcc = str(row.get("MCC") or "0").strip()
-                # 2. Remove commas and spaces
-                # clean_mcc = raw_mcc.replace(",", "").strip()
-                try:
-                    Country.objects.create(
-                        name=name,
-                        countryCode=code,
-                        MCC=raw_mcc,
-                        createdBy=user,
-                        updatedBy=user,
-                        isDeleted=False,
-                    )
-                except Exception as e:
-                    errors.append({"row": index, "error": str(e)})
-                    continue
+                    # Check if country already exists (by name)
+                    if Country.objects.filter(
+                        Q(name__iexact=name), isDeleted=False
+                    ).exists():
+                        errors.append(
+                            {
+                                "row": index,
+                                "error": f"Country '{name}' already exists",
+                            }
+                        )
+                        continue
 
-                # Update progress
-                progress = int((index / total) * 100)
-                redis_client.set(task_id, str(progress))
+                    raw_mcc = str(row.get("MCC") or "0").strip()
+
+                    try:
+                        # ⚡️ 2. INNER TRANSACTION: Catches DB-level crashes without breaking the loop
+                        with transaction.atomic():
+                            Country.objects.create(
+                                name=name,
+                                countryCode=code,
+                                MCC=raw_mcc,
+                                createdBy=user,
+                                updatedBy=user,
+                                isDeleted=False,
+                            )
+                    except Exception as e:
+                        errors.append({"row": index, "error": str(e)})
+                        continue
+
+                    # Update progress
+                    progress = int((index / total) * 100)
+                    redis_client.set(task_id, str(progress))
+
+                # ⚡️ 3. ROLLBACK TRIGGER: Deletes everything if even one error was found
+                if errors:
+                    transaction.set_rollback(True)
+                    final_message = (
+                        f"Import failed. 0 of {total} rows saved due to errors."
+                    )
+                else:
+                    final_message = f"Success! {total} rows processed and saved."
 
         # Mark complete
         redis_client.set(task_id, "100")
         redis_client.set(
             f"{task_id}_result",
-            json.dumps({"message": f"{total} rows processed", "errors": errors}),
+            json.dumps({"message": final_message, "errors": errors}),
         )
 
         deleteForLater.apply_async(args=[filepath], countdown=100)
 
     except Exception as e:
         redis_client.set(task_id, f"error:{str(e)}")
+        deleteForLater.apply_async(args=[filepath], countdown=100)
 
 
 @shared_task(bind=True)
@@ -476,6 +508,304 @@ def import_operator_task(self, filepath, user_id, task_id):
 
     except Exception as e:
         redis_client.set(task_id, f"error:{str(e)}")
+        deleteForLater.apply_async(args=[filepath], countdown=100)
+
+
+@shared_task(bind=True)
+def import_currency_task(self, filepath, user_id, task_id):
+    """
+    Import currencies from CSV.
+    Expected CSV headers: name,currencyCode,numericCode,symbol,decimalPlaces,isActive
+    """
+    redis_client.set(task_id, "0")  # initial progress
+    errors = []
+
+    try:
+        with open(filepath, newline="", encoding="utf-8") as csvfile:
+            rows = list(csv.DictReader(csvfile))
+            total = len(rows)
+            user = User.objects.get(id=user_id)
+
+            if total == 0:
+                redis_client.set(task_id, "100")
+                redis_client.set(
+                    f"{task_id}_result",
+                    json.dumps({"message": "Empty CSV", "errors": []}),
+                )
+                return
+            with transaction.atomic():
+
+                for index, row in enumerate(rows, start=1):
+                    name = row.get("name", "").strip()
+                    currency_code = row.get("currencyCode", "").strip()
+                    numeric_code = row.get("numericCode", "").strip()
+                    symbol = row.get("symbol", "").strip()
+
+                    # Handle decimal places (default to 2 if empty or invalid)
+                    raw_decimal = row.get("decimalPlaces", "").strip()
+                    try:
+                        decimal_places = int(raw_decimal) if raw_decimal else 2
+                    except ValueError:
+                        decimal_places = 2
+
+                    # Handle boolean conversion for isActive (defaults to True)
+                    raw_is_active = str(row.get("isActive", "true")).strip().lower()
+                    is_active = raw_is_active in ["true", "1", "yes", "y"]
+
+                    # Validate required fields
+                    if not name:
+                        errors.append({"row": index, "error": "Missing currency name"})
+                        continue
+
+                    # Check if currency already exists (checking by name)
+                    if Currency.objects.filter(
+                        name__iexact=name, isDeleted=False
+                    ).exists():
+                        errors.append(
+                            {
+                                "row": index,
+                                "error": f"Currency '{name}' already exists",
+                            }
+                        )
+                        continue
+
+                    # Alternatively, you could check for duplicate currencyCode if that's critical:
+                    # if (
+                    #     currency_code
+                    #     and Currency.objects.filter(
+                    #         currencyCode__iexact=currency_code, isDeleted=False
+                    #     ).exists()
+                    # ):
+                    #     errors.append(
+                    #         {
+                    #             "row": index,
+                    #             "error": f"Currency code '{currency_code}' already exists",
+                    #         }
+                    #     )
+                    #     continue
+
+                    try:
+                        with transaction.atomic():
+
+                            Currency.objects.create(
+                                name=name,
+                                currencyCode=currency_code if currency_code else None,
+                                numericCode=numeric_code if numeric_code else None,
+                                symbol=symbol if symbol else None,
+                                decimalPlaces=decimal_places,
+                                isActive=is_active,
+                                isDeleted=False,
+                                createdBy=user,
+                                updatedBy=user,
+                            )
+                    except Exception as e:
+                        errors.append({"row": index, "error": str(e)})
+                        continue
+
+                    # Update progress
+                    progress = int((index / total) * 100)
+                    redis_client.set(task_id, str(progress))
+                # ⚡️ 3. THE ROLLBACK TRIGGER
+                # This explicitly checks the errors list after the loop finishes.
+                if errors:
+                    transaction.set_rollback(True)
+                    final_message = (
+                        f"Import failed. 0 of {total} rows saved due to errors."
+                    )
+                else:
+                    final_message = f"Success! {total} rows processed and saved."
+
+        # Mark complete
+        redis_client.set(task_id, "100")
+        redis_client.set(
+            f"{task_id}_result",
+            json.dumps({"message": final_message, "errors": errors}),
+        )
+
+        # Schedule file deletion
+        deleteForLater.apply_async(args=[filepath], countdown=100)
+
+    except Exception as e:
+        redis_client.set(task_id, f"error:{str(e)}")
+        deleteForLater.apply_async(args=[filepath], countdown=100)
+
+
+@shared_task(bind=True)
+def import_operator_network_code_task(self, filepath, user_id, task_id):
+    """
+    Import Operator Network Codes from CSV.
+    Expected CSV headers: operator_name, country_name, MCC, MNC, networkName, networkType, isPrimary, status, effectiveFrom, effectiveTo, notes
+    Dates must be in YYYY-MM-DD format.
+    """
+    redis_client.set(task_id, "0")  # initial progress
+    errors = []
+
+    VALID_NETWORK_TYPES = ["GSM", "LTE", "5G", "CDMA", "UNKNOWN"]
+    VALID_STATUSES = ["ACTIVE", "INACTIVE"]
+
+    try:
+        with open(filepath, newline="", encoding="utf-8") as csvfile:
+            rows = list(csv.DictReader(csvfile))
+            total = len(rows)
+            user = User.objects.get(id=user_id)
+
+            if total == 0:
+                redis_client.set(task_id, "100")
+                redis_client.set(
+                    f"{task_id}_result",
+                    json.dumps({"message": "Empty CSV", "errors": []}),
+                )
+                return
+
+            # ⚡️ OPEN THE MASTER TRANSACTION BLOCK
+            with transaction.atomic():
+                for index, row in enumerate(rows, start=1):
+                    # 1. Extract strings
+                    operator_name = row.get("operator_name", "").strip()
+                    country_name = row.get("country_name", "").strip()
+                    mcc = row.get("MCC", "").strip()
+                    mnc = row.get("MNC", "").strip()
+                    network_name = row.get("networkName", "").strip()
+                    notes = row.get("notes", "").strip()
+
+                    # 2. Extract and sanitize Choice Fields
+                    raw_network_type = row.get("networkType", "").strip().upper()
+                    network_type = (
+                        raw_network_type
+                        if raw_network_type in VALID_NETWORK_TYPES
+                        else "UNKNOWN"
+                    )
+
+                    raw_status = row.get("status", "").strip().upper()
+                    status = raw_status if raw_status in VALID_STATUSES else "ACTIVE"
+
+                    # 3. Extract and parse Boolean
+                    raw_is_primary = str(row.get("isPrimary", "false")).strip().lower()
+                    is_primary = raw_is_primary in ["true", "1", "yes", "y"]
+
+                    # 4. Extract and parse Dates (YYYY-MM-DD)
+                    effective_from = None
+                    effective_to = None
+
+                    try:
+                        raw_from = row.get("effectiveFrom", "").strip()
+                        if raw_from:
+                            effective_from = datetime.strptime(
+                                raw_from, "%Y-%m-%d"
+                            ).date()
+
+                        raw_to = row.get("effectiveTo", "").strip()
+                        if raw_to:
+                            effective_to = datetime.strptime(raw_to, "%Y-%m-%d").date()
+                    except ValueError:
+                        errors.append(
+                            {
+                                "row": index,
+                                "error": "Invalid date format. Must be YYYY-MM-DD.",
+                            }
+                        )
+                        continue
+
+                    # 5. Validate mandatory fields
+                    if not operator_name or not country_name or not mcc or not mnc:
+                        errors.append(
+                            {
+                                "row": index,
+                                "error": "Missing operator_name, country_name, MCC, or MNC",
+                            }
+                        )
+                        continue
+
+                    # 6. Look up Foreign Keys
+                    country = Country.objects.filter(
+                        name__iexact=country_name, isDeleted=False
+                    ).first()
+                    if not country:
+                        errors.append(
+                            {
+                                "row": index,
+                                "error": f"Country '{country_name}' not found",
+                            }
+                        )
+                        continue
+
+                    operator_obj = Operators.objects.filter(
+                        name__iexact=operator_name, isDeleted=False
+                    ).first()
+                    if not operator_obj:
+                        errors.append(
+                            {
+                                "row": index,
+                                "error": f"Operator '{operator_name}' not found",
+                            }
+                        )
+                        continue
+
+                    # 7. Check Unique Together constraint
+                    if OperatorNetworkCode.objects.filter(
+                        operator=operator_obj, MCC=mcc, MNC=mnc, isDeleted=False
+                    ).exists():
+                        errors.append(
+                            {
+                                "row": index,
+                                "error": f"Network Code MCC{mcc}-MNC{mnc} for Operator '{operator_name}' already exists",
+                            }
+                        )
+                        continue
+
+                    # 8. Create the record
+                    try:
+                        # ⚡️ INNER ATOMIC BLOCK: Prevents Django from crashing the outer transaction if this specific create fails
+                        with transaction.atomic():
+                            OperatorNetworkCode.objects.create(
+                                operator=operator_obj,
+                                country=country,
+                                MCC=mcc,
+                                MNC=mnc,
+                                networkName=network_name if network_name else None,
+                                networkType=network_type,
+                                isPrimary=is_primary,
+                                status=status,
+                                effectiveFrom=effective_from,
+                                effectiveTo=effective_to,
+                                notes=notes if notes else None,
+                                createdBy=user,
+                                updatedBy=user,
+                                isDeleted=False,
+                            )
+                    except Exception as e:
+                        errors.append({"row": index, "error": str(e)})
+                        continue
+
+                    # Update progress
+                    progress = int((index / total) * 100)
+                    redis_client.set(task_id, str(progress))
+
+                # ⚡️ THE ALL-OR-NOTHING LOGIC
+                # Once all rows are processed, we check if ANY errors were collected
+                if errors:
+                    transaction.set_rollback(
+                        True
+                    )  # This deletes all the objects we just created!
+                    final_message = (
+                        f"Import failed. 0 of {total} rows saved due to errors."
+                    )
+                else:
+                    final_message = f"Success! {total} rows processed and saved."
+
+        # Mark complete and save the final report to Redis
+        redis_client.set(task_id, "100")
+        redis_client.set(
+            f"{task_id}_result",
+            json.dumps({"message": final_message, "errors": errors}),
+        )
+
+        # Schedule file deletion
+        deleteForLater.apply_async(args=[filepath], countdown=100)
+
+    except Exception as e:
+        redis_client.set(task_id, f"error:{str(e)}")
+        deleteForLater.apply_async(args=[filepath], countdown=100)
 
 
 @shared_task
@@ -739,25 +1069,15 @@ def process_campaign_contacts_task(
         # 2. PARSE MANUAL TEXT INPUT (If exists)
         # ==========================================
         if contacts_string:
-            print("666666666666666666666666666666666666666666666")
             contacts = [c.strip() for c in contacts_string.split(",") if c.strip()]
-            print("666666666666666666666666666666666666666666666", contacts)
 
             for contact in contacts:
                 if contact in seenInputs:
-                    print("666666666666666666666666666666666666666666666", contact)
 
                     duplicateInInput.append(contact)
-                    print(
-                        "666666666666666666666666666666666666666666666",
-                        duplicateInInput,
-                    )
 
                 else:
                     seenInputs.add(contact)
-                    print("111111111111111111111111111111111111111111111111", contact)
-
-                    print("111111111111111111111111111111111111111111111111", contact)
 
                     createdContacts.append(
                         CampaignContact(campaign=campaign, contactNumber=contact)
@@ -767,7 +1087,6 @@ def process_campaign_contacts_task(
         # 3. SAVE TO DATABASE & QUEUE SMS
         # ==========================================
         if createdContacts:
-            print("55555555555555", contact)
 
             CampaignContact.objects.bulk_create(createdContacts)
 
@@ -781,15 +1100,8 @@ def process_campaign_contacts_task(
             vendorRatePerSegment = VendorRate.objects.filter(
                 ratePlan=default_vendor.ratePlanName
             ).first()
-            print(
-                "55555555555555",
-                default_vendor,
-                vendorRatePerSegment,
-                encoding_type,
-                total_segments,
-            )
+
             total_vendor_cost = vendorRatePerSegment.rate * total_segments
-            print("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww")
             # Loop to generate SMPP Messages
             for contact_obj in createdContacts:
                 # Clean it just to be safe for the SMPP server

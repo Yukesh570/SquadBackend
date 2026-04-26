@@ -46,7 +46,9 @@ class GetSerializer(serializers.ModelSerializer):
         ]
 
     def get_children(self, obj):
-        children = NavItem.objects.filter(parent=obj, isDeleted=False).order_by("order")
+        children = NavItem.objects.filter(
+            parent=obj, is_active=True, isDeleted=False
+        ).order_by("order")
         # Recursively serialize children
         return GetSerializer(children, many=True, context=self.context).data
 

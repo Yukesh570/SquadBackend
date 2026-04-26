@@ -87,7 +87,7 @@ class NavItemViewSet(viewsets.ModelViewSet):
             module = self.kwargs.get("module")
             check_permission(self, "read", module)
 
-            return NavItem.objects.filter(is_active=True, isDeleted=False)
+            return NavItem.objects.filter(isDeleted=False)
         return super().get_queryset()
 
     def perform_create(self, serializer):
