@@ -80,7 +80,16 @@ class ClientViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         module = self.kwargs.get("module")
         check_permission(self, "read", module)
-        return Client.objects.filter(isDeleted=False)
+        return (
+            Client.objects.filter(isDeleted=False)
+            .select_related(
+                "company",  # Grabs the Company table in the same query
+                "clientPolicy",  # Grabs the Policy table in the same query
+            )
+            .prefetch_related(
+                "active_sessions"  # Grabs all active sessions in one bulk query
+            )
+        )
 
     def perform_create(self, serializer):
         module = self.kwargs.get("module")
