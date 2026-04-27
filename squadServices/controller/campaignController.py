@@ -19,6 +19,7 @@ from squadServices.helper.action import (
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from squadServices.models.campaign import Campaign, CampaignContact, Template
+from squadServices.models.clientModel.client import Client
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.notificationModel.notification import Notification
 from squadServices.models.smpp.smppSMS import SMSMessage
@@ -103,7 +104,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
         data = request.data.copy()
         name = data.get("name")
         module = self.kwargs.get("module")
-        vendor = data.get("vendor")
+        client = data.get("client")
         check_permission(self, "write", module)
 
         contacts_data = data.pop("contacts", None)
@@ -135,7 +136,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 schedule=scheduleValue,
                 objective=objective,
                 content=content,
-                vendor=Vendor.objects.get(id=vendor),
+                client=Client.objects.get(id=client),
                 name=name,
                 createdBy=self.request.user,
                 updatedBy=self.request.user,
@@ -160,7 +161,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 {"error": "Please provide a file or manual contacts."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        print("vendor!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", vendor)
+        print("client!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", client)
         # 5. FIRE AND FORGET: Hand off to Celery
         process_campaign_contacts_task.delay(
             campaign_id=campaign.id,
@@ -168,7 +169,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             contacts_string=contacts_data,
             user_id=self.request.user.id,
             message_text=message_text,
-            vendor_id=vendor,
+            client_id=client,
         )
 
         log_action_create(self.request.user, "Campaign", name)

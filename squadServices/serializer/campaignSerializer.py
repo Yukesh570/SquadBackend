@@ -4,15 +4,15 @@ from squadServices.models.campaign import Campaign, CampaignContact, Template
 
 
 class CampaignSerializer(serializers.ModelSerializer):
-    vendorName = serializers.CharField(source="vendor.profileName", read_only=True)
+    clientName = serializers.CharField(source="client.name", read_only=True)
 
     class Meta:
         model = Campaign
         fields = [
             "id",
             "name",
-            "vendor",
-            "vendorName",
+            "client",
+            "clientName",
             "objective",
             "content",
             "template",

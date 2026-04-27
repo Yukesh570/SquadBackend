@@ -81,12 +81,14 @@ class ClientViewSet(viewsets.ModelViewSet):
         module = self.kwargs.get("module")
         check_permission(self, "read", module)
         return (
+            # f Django REST Framework: .select_related()prefetch_related() fetches the data from the database,
+            # but the Serializer decides what actually gets printed to the JSON screen.
             Client.objects.filter(isDeleted=False)
-            .select_related(
+            .select_related(  # client has one company and one policy
                 "company",  # Grabs the Company table in the same query
                 "clientPolicy",  # Grabs the Policy table in the same query
             )
-            .prefetch_related(
+            .prefetch_related(  # client has many sessions
                 "active_sessions"  # Grabs all active sessions in one bulk query
             )
         )

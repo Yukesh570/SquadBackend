@@ -1,6 +1,7 @@
 from django.db import models
 
 from squad import settings
+from squadServices.models.clientModel.client import Client
 from squadServices.models.connectivityModel.verdor import Vendor
 
 
@@ -44,7 +45,7 @@ class Campaign(models.Model):
     template = models.ForeignKey(
         Template, on_delete=models.SET_NULL, null=True, blank=True
     )
-    vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True)
+    client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True)
     schedule = models.DateTimeField(null=True, blank=True)
     isDeleted = models.BooleanField(default=False)
 

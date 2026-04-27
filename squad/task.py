@@ -17,7 +17,9 @@ from rest_framework.response import Response
 import json
 from django.core.files.storage import default_storage
 from squadServices import models
+from squadServices.helper.routeAndCostHelper import get_route_and_cost
 from squadServices.models.campaign import CampaignContact
+from squadServices.models.clientModel.client import Client
 from squadServices.models.connectivityModel.verdor import Vendor
 from squadServices.models.country import Country, Currency
 from squadServices.models.finanace.invoice import ClientInvoice, VendorInvoice
@@ -26,6 +28,7 @@ from squadServices.models.mappingSetup.mappingSetup import MappingSetup
 from squadServices.models.operators.operators import OperatorNetworkCode, Operators
 from squadServices.models.rateManagementModel.vendorRate import VendorRate
 from squadServices.models.transaction.transaction import (
+    ClientTransaction,
     TransactionType,
     VendorTransaction,
 )
@@ -986,7 +989,7 @@ def get_encoding_and_segments(text):
 
 @shared_task
 def process_campaign_contacts_task(
-    campaign_id, file_path, contacts_string, user_id, message_text, vendor_id
+    campaign_id, file_path, contacts_string, user_id, message_text, client_id
 ):
     """
     Background worker to parse contacts, save them to the Campaign,
@@ -1087,86 +1090,195 @@ def process_campaign_contacts_task(
         # 3. SAVE TO DATABASE & QUEUE SMS
         # ==========================================
         if createdContacts:
-
             CampaignContact.objects.bulk_create(createdContacts)
 
-            # Setup Vendor & Encoding logic
+            # 1. Setup Encoding & Fetch the Client
             encoding_type, total_segments, total_chars = get_encoding_and_segments(
                 message_text
             )
-            default_vendor = (
-                Vendor.objects.filter(id=vendor_id).first() or Vendor.objects.first()
-            )
-            vendorRatePerSegment = VendorRate.objects.filter(
-                ratePlan=default_vendor.ratePlanName
-            ).first()
 
-            total_vendor_cost = vendorRatePerSegment.rate * total_segments
-            # Loop to generate SMPP Messages
+            # ⚡️ Fetch the specific Client who is running this campaign
+            client_obj = Client.objects.select_related("company").get(id=client_id)
+            client_company = client_obj.company
+
+            # 2. Loop to generate SMPP Messages
             for contact_obj in createdContacts:
-                # Clean it just to be safe for the SMPP server
                 destination_addr = clean_phone_number(
                     contact_obj.contactNumber
                 ).replace("+", "")
                 print(
                     f"Queuing SMS to {destination_addr} with encoding {encoding_type} and {total_segments} segments"
                 )
-                unique_msg_id = str(uuid.uuid4())  # Add 'await'
+                unique_msg_id = str(uuid.uuid4())
 
-                with transaction.atomic():
-                    # A. Lock the Vendor's Parent Company to prevent race conditions
-                    locked_vendor_company = (
-                        type(default_vendor.company)
-                        .objects.select_for_update()
-                        .get(id=default_vendor.company.id)
-                    )
+                # --- A. FIND THE DESTINATION COUNTRY ---
+                destination_country = None
+                for i in range(4, 0, -1):
+                    possible_code = destination_addr[:i]
+                    destination_country = Country.objects.filter(
+                        countryCode=possible_code, isDeleted=False
+                    ).first()
+                    if destination_country:
+                        break
 
-                    # B. Update the Balance
-                    locked_vendor_company.usedVendorCredit += total_vendor_cost
-                    locked_vendor_company.save(update_fields=["usedVendorCredit"])
-                    parent_msg = SMSMessage.objects.create(
-                        destination=destination_addr,
-                        message_id=unique_msg_id,  # Add 'message_id'
-                        text=message_text,
-                        encoding=encoding_type,
-                        segmentNumber=total_segments,
-                        characterCount=total_chars,
-                        status="queued",
-                        vendor=default_vendor,
-                        smpp=default_vendor.smpp,
-                        client=None,
-                        createdBy=user,
-                        sendClientDlr=False,
-                        queued_at=timezone.now(),
-                    )
-                    VendorTransaction.objects.create(
-                        vendor=default_vendor,
-                        message=parent_msg,
-                        transactionType=TransactionType.DEDUCTION,
-                        segments=total_segments,
-                        ratePerSegment=vendorRatePerSegment.rate,
-                        amount=total_vendor_cost,
-                        balanceSpent=locked_vendor_company.usedVendorCredit,
-                        description=f"System Campaign - Routing charge for SMS {parent_msg.message_id}",
-                    )
+                if not destination_country:
+                    print(f"Skipping {destination_addr}: Unrecognized Country Code")
+                    continue
 
-                create_message_parts(parent_msg, message_text)
-
-                DetailedSMSReport.objects.create(
-                    message=parent_msg,
-                    text_message_id=parent_msg.message_id or f"queued-{parent_msg.id}",
-                    text=parent_msg.text,
-                    part_total=total_segments,
-                    client="SYSTEM_CAMPAIGN",
-                    clientRate=0.00,
-                    client_charge=0.00,
-                    vendor=default_vendor.profileName if default_vendor else "Unknown",
-                    vendorRate=vendorRatePerSegment.rate,
-                    vendor_charge=total_vendor_cost,
-                    submitStatus="QUEUED",
-                    request_time=parent_msg.createdAt,
-                    destination=parent_msg.destination,
+                # --- B. CALL THE ROUTING ENGINE ---
+                # This uses the exact same logic as your SMPP Server!
+                route_data, routing_error = get_route_and_cost(
+                    client_obj, destination_country
                 )
+
+                if routing_error:
+                    print(f"Routing Failed for {destination_addr}: {routing_error}")
+                    # Optional: Create a FAILED SMSMessage here to track the failure
+                    SMSMessage.objects.create(
+                        client=client_obj,
+                        systemId=client_obj.smppUsername,
+                        destination=destination_addr,
+                        text=message_text,
+                        status="failed",
+                        failure_reason=routing_error,
+                        queued_at=timezone.now(),
+                        failed_at=timezone.now(),
+                    )
+                    continue
+
+                # --- C. CALCULATE COSTS ---
+                total_vendor_cost = route_data["vendor_cost"] * total_segments
+                total_client_cost = route_data["client_cost"] * total_segments
+
+                vendor_obj = route_data["vendor"]
+                smpp_obj = route_data["smpp"]
+                raw_terminating_company = route_data["terminatingCompany"]
+
+                print(f"Queuing SMS to {destination_addr} via {vendor_obj.profileName}")
+
+                # --- D. THE ATOMIC LOCK (BILLING & SAVING) ---
+                try:
+                    with transaction.atomic():
+                        # 1. LOCK ALL 3 BALANCES
+                        locked_vendor_company = (
+                            type(raw_terminating_company)
+                            .objects.select_for_update()
+                            .get(id=raw_terminating_company.id)
+                        )
+                        locked_client = Client.objects.select_for_update().get(
+                            id=client_obj.id
+                        )
+                        locked_client_company = (
+                            type(client_company)
+                            .objects.select_for_update()
+                            .get(id=client_company.id)
+                        )
+
+                        # 2. CHECK LIMITS (Pre-flight safety check)
+                        if (
+                            locked_vendor_company.usedVendorCredit + total_vendor_cost
+                        ) > locked_vendor_company.vendorCreditLimit:
+                            raise Exception("Insufficient Vendor Credit")
+                        if (
+                            locked_client.usedCredit + total_client_cost
+                        ) > locked_client.creditLimit:
+                            raise Exception("Insufficient Client Credit")
+                        if (
+                            locked_client_company.usedCustomerCredit + total_client_cost
+                        ) > locked_client_company.customerCreditLimit:
+                            raise Exception("Insufficient Company Credit")
+
+                        # 3. DEDUCT ALL BALANCES
+                        locked_vendor_company.usedVendorCredit += total_vendor_cost
+                        locked_vendor_company.save(update_fields=["usedVendorCredit"])
+
+                        locked_client.usedCredit += total_client_cost
+                        locked_client.save(update_fields=["usedCredit"])
+
+                        locked_client_company.usedCustomerCredit += total_client_cost
+                        locked_client_company.save(update_fields=["usedCustomerCredit"])
+
+                        # 4. CREATE THE SMS MESSAGE
+                        parent_msg = SMSMessage.objects.create(
+                            destination=destination_addr,
+                            message_id=unique_msg_id,
+                            text=message_text,
+                            encoding=encoding_type,
+                            segmentNumber=total_segments,
+                            characterCount=total_chars,
+                            status="queued",
+                            vendor=vendor_obj,  # ⚡️ Assigned dynamically!
+                            smpp=smpp_obj,  # ⚡️ Assigned dynamically!
+                            client=locked_client,  # ⚡️ Client is now attached!
+                            systemId=locked_client.smppUsername,
+                            createdBy=user,
+                            sendClientDlr=False,  # Campaigns don't need SMPP DLRs
+                            queued_at=timezone.now(),
+                        )
+                        create_message_parts(parent_msg, message_text)
+
+                        # 5. WRITE VENDOR LEDGER
+                        VendorTransaction.objects.create(
+                            vendor=vendor_obj,
+                            message=parent_msg,
+                            transactionType=TransactionType.DEDUCTION,
+                            segments=total_segments,
+                            ratePerSegment=route_data["vendor_cost"],
+                            amount=total_vendor_cost,
+                            balanceSpent=locked_vendor_company.usedVendorCredit,
+                            description=f"Campaign - Routing charge for SMS {unique_msg_id}",
+                        )
+
+                        # 6. WRITE CLIENT LEDGER
+                        ClientTransaction.objects.create(
+                            client=locked_client,
+                            message=parent_msg,
+                            transactionType=TransactionType.DEDUCTION,
+                            segments=total_segments,
+                            ratePerSegment=route_data["client_cost"],
+                            amount=total_client_cost,
+                            chargePolicy=locked_client.invoicePolicy,
+                            currency=(
+                                locked_client.company.currency.name
+                                if locked_client.company.currency
+                                else "USD"
+                            ),
+                            balanceSpent=locked_client.usedCredit,
+                            description=f"Campaign - Sent SMS {unique_msg_id}",
+                        )
+
+                        # 7. WRITE DETAILED REPORT
+                        DetailedSMSReport.objects.create(
+                            message=parent_msg,
+                            text_message_id=unique_msg_id,
+                            senderId=locked_client.smppUsername,
+                            text=message_text,
+                            part_total=total_segments,
+                            client=locked_client.smppUsername,
+                            clientRate=route_data["client_cost"],
+                            client_charge=total_client_cost,
+                            vendor=vendor_obj.profileName,
+                            vendorRate=route_data["vendor_cost"],
+                            vendor_charge=total_vendor_cost,
+                            submitStatus="QUEUED",
+                            operatorMNC=route_data.get("mnc", "Unknown"),
+                            countryMCC=route_data.get("country_code", "Unknown"),
+                            request_time=parent_msg.createdAt,
+                            destination=destination_addr,
+                        )
+                except Exception as e:
+                    print(f"Skipping {destination_addr} due to billing constraint: {e}")
+                    # Save as failed due to credit
+                    SMSMessage.objects.create(
+                        client=client_obj,
+                        systemId=client_obj.smppUsername,
+                        destination=destination_addr,
+                        text=message_text,
+                        status="failed",
+                        failure_reason=str(e),
+                        queued_at=timezone.now(),
+                        failed_at=timezone.now(),
+                    )
 
     except Exception as e:
         print(f"🔥 Task Failed for Campaign {campaign_id}: {str(e)}")
