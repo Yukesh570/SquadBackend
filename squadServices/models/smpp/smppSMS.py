@@ -230,7 +230,7 @@ class DLREvent(models.Model):
     provider_message_id = models.CharField(max_length=255, null=True, blank=True)
     event_type = models.CharField(max_length=30, choices=EVENT_TYPE_CHOICES)
     segment_number = models.IntegerField(null=True, blank=True)
-    status_code = models.CharField(max_length=10, null=True, blank=True)
+    status_code = models.CharField(max_length=20, null=True, blank=True)
     status_description = models.TextField(null=True, blank=True)
     raw_payload = JSONField(null=True, blank=True)
     received_at = models.DateTimeField(default=timezone.now)

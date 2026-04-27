@@ -450,6 +450,7 @@ class Command(BaseCommand):
         )
 
     # it talks to the telecom vendor
+    # it talks to the telecom vendor
     def handle_incoming(self, pdu, config):
         try:
             ERROR_DESCRIPTIONS = {
@@ -460,12 +461,12 @@ class Command(BaseCommand):
                 "011": "Carrier SMSC queue full.",
                 "013": "Blocked by Carrier Spam Filter.",
                 "014": "Sender ID blocked or unregistered.",
+                "078": "Restricted message content or Sender ID blocked.",  # ⚡️ ADDED 078
             }
             # When the vendor sends the Delivery Receipt (DLR), it arrives as raw computer bytes (zeros and ones).
             # This line converts those bytes into a readable Python string.
             content = pdu.short_message.decode("utf-8", errors="ignore")
             # Improved Regex to catch IDs like 7c6b98...
-
             # Think of Regex like using CTRL+F in a document, but supercharged.
             # It scans id in the DLR text and grabs the exact string of letters and numbers that come after "id:" and before the next space.
             match_id = re.search(r"id:([A-F0-9a-z]+)", content, re.IGNORECASE)
@@ -475,12 +476,34 @@ class Command(BaseCommand):
             # Grabs the 3-digit error code standard in SMPP DLRs
             match_err = re.search(r"err:([0-9a-zA-Z]+)", content, re.IGNORECASE)
             extracted_err_code = match_err.group(1) if match_err else ""
-            human_description = ERROR_DESCRIPTIONS.get(
-                extracted_err_code, f"Vendor Error ({extracted_err_code})"
-            )
+
+            # Ensure we actually found an ID and a Status in the DLR text
             if match_id and match_stat:
                 v_id = match_id.group(1)
-                v_stat = match_stat.group(1)
+                v_stat = match_stat.group(1).upper()
+
+                # ⚡️ THE SMART DESCRIPTION LOGIC ⚡️
+                if v_stat == "DELIVRD" and extracted_err_code == "000":
+                    human_description = "Delivered successfully."
+                elif (
+                    v_stat in ["REJECTD", "UNDELIV", "EXPIRED", "FAILED"]
+                    and extracted_err_code == "000"
+                ):
+                    human_description = (
+                        "Generic Vendor Rejection (No specific error code provided)."
+                    )
+                else:
+                    human_description = ERROR_DESCRIPTIONS.get(
+                        extracted_err_code, f"Vendor Error ({extracted_err_code})"
+                    )
+
+                # The bright console log for easy debugging
+                print("\n" + "!" * 50)
+                print(f"🚨 VENDOR DLR RECEIVED 🚨")
+                print(f"Raw DLR String: {content}")
+                print(f"Extracted Error Code: {extracted_err_code}")
+                print(f"Error Meaning: {human_description}")
+                print("!" * 50 + "\n")
 
                 status_map = {
                     "DELIVRD": "DELIVERED",
@@ -492,30 +515,21 @@ class Command(BaseCommand):
                 }
                 new_status = status_map.get(v_stat, "SUBMITTED")
 
-                # Update using the Vendor ID
-                # part=SMSMessagePart.objects.filter(vendor_msg_id=v_id).update(
-                #     submit_status=new_status
-                # )
                 part = (
                     SMSMessagePart.objects.filter(vendor_msg_id=v_id)
                     .select_related("message")
                     .first()
                 )
+
                 if part:
                     part.submit_status = new_status
-                    # Timestamp based on the DLR status
                     now = timezone.now()
                     if new_status == "DELIVERED":
                         part.delivered_at = now
-                        part.save(
-                            update_fields=[
-                                "submit_status",
-                                "delivered_at",
-                            ]
-                        )
+                        part.save(update_fields=["submit_status", "delivered_at"])
                     elif new_status == "FAILED":
                         part.failed_at = now
-                        part.failure_reason = content  # Store raw DLR string as reason
+                        part.failure_reason = content
                         part.save(
                             update_fields=[
                                 "submit_status",
@@ -523,6 +537,7 @@ class Command(BaseCommand):
                                 "failure_reason",
                             ]
                         )
+
                     attempt = (
                         MessageAttempt.objects.filter(segment=part)
                         .order_by("-started_at")
@@ -532,47 +547,45 @@ class Command(BaseCommand):
                         attempt.status = new_status
                         attempt.completed_at = now
                         fields_to_update = ["status", "completed_at"]
-
                         if new_status == "FAILED":
                             attempt.error_message = (
                                 f"Vendor DLR Error: {extracted_err_code}"
                             )
                             fields_to_update.append("error_message")
-
                         attempt.save(update_fields=fields_to_update)
-                    # 2. CREATE THE DLR EVENT LOG (The Boss's Requirement)
+
+                    # ⚡️ SAVING THE SMART DESCRIPTION TO THE DATABASE
                     DLREvent.objects.create(
                         message=part.message,
                         segment=part,
                         provider_message_id=v_id,
                         event_type=new_status,
                         segment_number=part.part_no,
-                        raw_payload={
-                            "raw_smpp_string": content
-                        },  # Saving exactly what the vendor sent
+                        raw_payload={"raw_smpp_string": content},
                         status_code=extracted_err_code,
-                        status_description=human_description,
+                        status_description=human_description,  # This is where the fix is applied!
                     )
-                    # 3. CHECK THE PARENT MESSAGE STATUS
+
                     self.update_parent_message_status(part.message)
+                    print(
+                        f"--- Updated Part with Vendor ID {v_id} to status {new_status} ---"
+                    )
+
+                    update_data = {"submitStatus": new_status}
+                    if new_status == "DELIVERED":
+                        update_data["delivery_time"] = timezone.now()
+
+                    DetailedSMSReport.objects.filter(vendor_msg_id__iexact=v_id).update(
+                        **update_data
+                    )
+                    self.stdout.write(
+                        self.style.SUCCESS(f"DLR: {v_id} is now {new_status}")
+                    )
+            else:
                 print(
-                    f"--- Updated Part with Vendor ID {v_id} to status {new_status} ---"
+                    f"--- DEBUG: DLR received but missing ID or STAT. Content: {content} ---"
                 )
-                # 2. Update Report using the VENDOR ID
-                update_data = {
-                    "submitStatus": new_status,
-                }
-                if new_status == "DELIVERED":
-                    update_data["delivery_time"] = timezone.now()
 
-                # CRITICAL: Filter by vendor_msg_id to match your model
-
-                DetailedSMSReport.objects.filter(vendor_msg_id__iexact=v_id).update(
-                    **update_data
-                )
-                self.stdout.write(
-                    self.style.SUCCESS(f"DLR: {v_id} is now {new_status}")
-                )
         except Exception as e:
             logger.error(f"DLR Error: {e}")
 
