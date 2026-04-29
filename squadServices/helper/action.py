@@ -34,6 +34,22 @@ def log_action_update(user, title, name):
     )
 
 
+def log_action_update_setting(user, title):
+    Notification.objects.create(
+        title=title,
+        description=f"{title}  updated .",
+        createdBy=user,
+        updatedBy=user,
+    )
+    UserLog.objects.create(
+        user=user,
+        title=title,
+        action=f"{title} updated.",
+        createdBy=user,
+        updatedBy=user,
+    )
+
+
 def log_action_create(user, title, name):
     Notification.objects.create(
         title=title,

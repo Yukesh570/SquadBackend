@@ -57,6 +57,9 @@ from squadServices.controller.financeController.vendorInvoiceController import (
     GenerateVendorInvoiceView,
     VendorInvoiceViewSet,
 )
+from squadServices.controller.generalSettingController.generalSettingController import (
+    GeneralSettingView,
+)
 from squadServices.controller.mappingSetupController.mappingSetupController import (
     MappingSetupViewSet,
 )
@@ -913,6 +916,17 @@ urlpatterns = [
         "finance/generate-vendorInvoice/",
         GenerateVendorInvoiceView.as_view(),
         name="generate-vendor-invoice",
+    ),
+    path(
+        "generalSettings/<str:module>/",
+        GeneralSettingView.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+            }
+        ),
+        name="system-settings",
     ),
 ]
 

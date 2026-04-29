@@ -20,7 +20,7 @@ class OperatorSerializer(serializers.ModelSerializer):
 
 class OperatorNetworkCodeSerializer(serializers.ModelSerializer):
     # 🟢 Read-only fields to show "Human Readable" data to the frontend
-    operator_name = serializers.ReadOnlyField(source="operator.operator_name")
+    operator_name = serializers.ReadOnlyField(source="operator.name")
     country_name = serializers.ReadOnlyField(source="country.name")
     country_iso = serializers.ReadOnlyField(source="country.iso2")
 
