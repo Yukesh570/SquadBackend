@@ -323,6 +323,7 @@ class Command(BaseCommand):
                 session_ids = []
                 channel_layer = get_channel_layer()  # ⚡️ Get Layer
                 for v in vendors_qs:
+                    print("~~~~~~~~~~~~~~~", v)
                     # Notify the React Dashboard via WebSocket
                     self.broadcast_vendor_status(v.id, config.smppHost, "ONLINE")
 
