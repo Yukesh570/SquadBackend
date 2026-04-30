@@ -59,6 +59,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("Starting Multi-Gateway SMPP Manager..."))
         Vendor.objects.update(bindStatus="OFFLINE")
+        VendorSession.objects.update(status="OFFLINE")
+
         try:
             while True:
                 try:
