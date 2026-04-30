@@ -43,3 +43,31 @@ class DashboardConsumer(AsyncWebsocketConsumer):
                 }
             )
         )
+
+    # Catches the 'vendor_session_change' event
+    async def vendor_session_change(self, event):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "action": "vendor_session_update",
+                    "session": {
+                        "vendor_id": event["vendor_id"],
+                        "status": event["status"],  # "ONLINE" or "OFFLINE"
+                    },
+                }
+            )
+        )
+
+    async def vendor_bind_change(self, event):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "action": "vendor_bind_update",  # Tell your React frontend what to do
+                    "vendor": {
+                        "id": event["vendor_id"],
+                        "host": event["smpp_host"],
+                        "bindStatus": event["bind_status"],
+                    },
+                }
+            )
+        )

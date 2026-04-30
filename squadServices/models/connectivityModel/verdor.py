@@ -1,8 +1,10 @@
 from django.conf import settings
 from django.db import models
+import uuid
 
 from squadServices.models.company import Company
 from squadServices.models.connectivityModel.smpp import SMPP
+from django.utils import timezone
 
 CONNECTION_TYPE_CHOICES = [
     ("SMPP", "SMPP"),
@@ -29,6 +31,13 @@ class Vendor(models.Model):
         blank=True,
         help_text="Type the exact name of the ratePlan used in the VendorRate table",
     )
+    bindStatus = models.CharField(
+        max_length=10,
+        choices=[("ONLINE", "Online"), ("OFFLINE", "Offline")],
+        default="OFFLINE",
+        help_text="Live indicator of whether the vendor is currently connected to our SMPP server.",
+    )
+
     profileName = models.CharField(max_length=255)
     connectionType = models.CharField(
         max_length=4,
@@ -92,6 +101,10 @@ class VendorPolicy(models.Model):
     )
     delayTime = models.FloatField(default=10.0, help_text="Delay Time (Seconds)")
 
+    maxSession = models.IntegerField(
+        default=2, help_text="Max concurrent SMPP sessions for this client"
+    )
+
     # --- 3. TIMEOUTS & HEARTBEATS ---
     responseTimeout = models.FloatField(
         default=30.0, help_text="Response Timeout (Seconds)"
@@ -146,3 +159,31 @@ class VendorPolicy(models.Model):
         related_name="vendorPolicy_updated",
     )
     updatedAt = models.DateTimeField(auto_now=True)
+
+
+class VendorSession(models.Model):
+    sessionId = models.CharField(max_length=64, primary_key=True, default=uuid.uuid4)
+    # Links to the Vendor (The business entity/config)
+    vendor = models.ForeignKey(
+        "Vendor", on_delete=models.CASCADE, related_name="sessions"
+    )
+    # The IP you connected TO
+    gatewayIp = models.CharField(max_length=45)
+
+    bindType = models.CharField(max_length=20)  # e.g. TRANSCEIVER
+
+    connectedAt = models.DateTimeField(default=timezone.now)
+    disconnectedAt = models.DateTimeField(null=True, blank=True)
+
+    # ONLINE, OFFLINE, FAILED
+    status = models.CharField(max_length=20, default="ONLINE")
+
+    # Store the reason for disconnection (e.g., "Connection reset by peer")
+    error_reason = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "vendorSessions"
+        ordering = ["-connectedAt"]
+
+    def __str__(self):
+        return f"Session {self.sessionId} - {self.vendor.profileName}"

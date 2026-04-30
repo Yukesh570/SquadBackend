@@ -44,6 +44,7 @@ from num2words import num2words
 from dateutil import parser
 import logging
 import re  # Make sure this is at the top of your file!
+import io
 
 User = get_user_model()
 from django.conf import settings
@@ -524,99 +525,93 @@ def import_currency_task(self, filepath, user_id, task_id):
     errors = []
 
     try:
-        with open(filepath, newline="", encoding="utf-8") as csvfile:
-            rows = list(csv.DictReader(csvfile))
-            total = len(rows)
-            user = User.objects.get(id=user_id)
+        # ⚡️ 1. Read the file as raw bytes first
+        with open(filepath, "rb") as f:
+            raw_data = f.read()
 
-            if total == 0:
-                redis_client.set(task_id, "100")
-                redis_client.set(
-                    f"{task_id}_result",
-                    json.dumps({"message": "Empty CSV", "errors": []}),
-                )
-                return
-            with transaction.atomic():
+        # ⚡️ 2. Smart Decoding
+        try:
+            # Try UTF-8 first (using -sig to strip Excel's hidden BOM characters)
+            decoded_content = raw_data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            # Fallback to standard Excel Windows encoding if a € or £ trips up UTF-8
+            decoded_content = raw_data.decode("windows-1252")
 
-                for index, row in enumerate(rows, start=1):
-                    name = row.get("name", "").strip()
-                    currency_code = row.get("currencyCode", "").strip()
-                    numeric_code = row.get("numericCode", "").strip()
-                    symbol = row.get("symbol", "").strip()
+        # ⚡️ 3. Pass the successfully decoded string into the CSV DictReader
+        csvfile = io.StringIO(decoded_content)
+        rows = list(csv.DictReader(csvfile))
+        total = len(rows)
 
-                    # Handle decimal places (default to 2 if empty or invalid)
-                    raw_decimal = row.get("decimalPlaces", "").strip()
-                    try:
-                        decimal_places = int(raw_decimal) if raw_decimal else 2
-                    except ValueError:
-                        decimal_places = 2
+        user = User.objects.get(id=user_id)
 
-                    # Handle boolean conversion for isActive (defaults to True)
-                    raw_is_active = str(row.get("isActive", "true")).strip().lower()
-                    is_active = raw_is_active in ["true", "1", "yes", "y"]
+        if total == 0:
+            redis_client.set(task_id, "100")
+            redis_client.set(
+                f"{task_id}_result",
+                json.dumps({"message": "Empty CSV", "errors": []}),
+            )
+            return
 
-                    # Validate required fields
-                    if not name:
-                        errors.append({"row": index, "error": "Missing currency name"})
-                        continue
+        with transaction.atomic():
+            for index, row in enumerate(rows, start=1):
+                name = row.get("name", "").strip()
+                currency_code = row.get("currencyCode", "").strip()
+                numeric_code = row.get("numericCode", "").strip()
+                symbol = row.get("symbol", "").strip()
 
-                    # Check if currency already exists (checking by name)
-                    if Currency.objects.filter(
-                        name__iexact=name, isDeleted=False
-                    ).exists():
-                        errors.append(
-                            {
-                                "row": index,
-                                "error": f"Currency '{name}' already exists",
-                            }
-                        )
-                        continue
+                # Handle decimal places (default to 2 if empty or invalid)
+                raw_decimal = row.get("decimalPlaces", "").strip()
+                try:
+                    decimal_places = int(raw_decimal) if raw_decimal else 2
+                except ValueError:
+                    decimal_places = 2
 
-                    # Alternatively, you could check for duplicate currencyCode if that's critical:
-                    # if (
-                    #     currency_code
-                    #     and Currency.objects.filter(
-                    #         currencyCode__iexact=currency_code, isDeleted=False
-                    #     ).exists()
-                    # ):
-                    #     errors.append(
-                    #         {
-                    #             "row": index,
-                    #             "error": f"Currency code '{currency_code}' already exists",
-                    #         }
-                    #     )
-                    #     continue
+                # Handle boolean conversion for isActive (defaults to True)
+                raw_is_active = str(row.get("isActive", "true")).strip().lower()
+                is_active = raw_is_active in ["true", "1", "yes", "y"]
 
-                    try:
-                        with transaction.atomic():
+                # Validate required fields
+                if not name:
+                    errors.append({"row": index, "error": "Missing currency name"})
+                    continue
 
-                            Currency.objects.create(
-                                name=name,
-                                currencyCode=currency_code if currency_code else None,
-                                numericCode=numeric_code if numeric_code else None,
-                                symbol=symbol if symbol else None,
-                                decimalPlaces=decimal_places,
-                                isActive=is_active,
-                                isDeleted=False,
-                                createdBy=user,
-                                updatedBy=user,
-                            )
-                    except Exception as e:
-                        errors.append({"row": index, "error": str(e)})
-                        continue
-
-                    # Update progress
-                    progress = int((index / total) * 100)
-                    redis_client.set(task_id, str(progress))
-                # ⚡️ 3. THE ROLLBACK TRIGGER
-                # This explicitly checks the errors list after the loop finishes.
-                if errors:
-                    transaction.set_rollback(True)
-                    final_message = (
-                        f"Import failed. 0 of {total} rows saved due to errors."
+                # Check if currency already exists (checking by name)
+                if Currency.objects.filter(name__iexact=name, isDeleted=False).exists():
+                    errors.append(
+                        {
+                            "row": index,
+                            "error": f"Currency '{name}' already exists",
+                        }
                     )
-                else:
-                    final_message = f"Success! {total} rows processed and saved."
+                    continue
+
+                try:
+                    with transaction.atomic():
+                        Currency.objects.create(
+                            name=name,
+                            currencyCode=currency_code if currency_code else None,
+                            numericCode=numeric_code if numeric_code else None,
+                            symbol=symbol if symbol else None,
+                            decimalPlaces=decimal_places,
+                            isActive=is_active,
+                            isDeleted=False,
+                            createdBy=user,
+                            updatedBy=user,
+                        )
+                except Exception as e:
+                    errors.append({"row": index, "error": str(e)})
+                    continue
+
+                # Update progress
+                progress = int((index / total) * 100)
+                redis_client.set(task_id, str(progress))
+
+            # THE ROLLBACK TRIGGER
+            if errors:
+                transaction.set_rollback(True)
+                final_message = f"Import failed. 0 of {total} rows saved due to errors."
+            else:
+                final_message = f"Success! {total} rows processed and saved."
 
         # Mark complete
         redis_client.set(task_id, "100")
@@ -664,8 +659,8 @@ def import_operator_network_code_task(self, filepath, user_id, task_id):
             with transaction.atomic():
                 for index, row in enumerate(rows, start=1):
                     # 1. Extract strings
-                    operator_name = row.get("operator_name", "").strip()
-                    country_name = row.get("country_name", "").strip()
+                    operator_name = row.get("operator", "").strip()
+                    country_name = row.get("country", "").strip()
                     mcc = row.get("MCC", "").strip()
                     mnc = row.get("MNC", "").strip()
                     network_name = row.get("networkName", "").strip()

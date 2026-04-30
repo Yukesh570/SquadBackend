@@ -6,6 +6,7 @@ import re
 import smpplib.client
 import smpplib.consts
 from django.core.management.base import BaseCommand
+from squadServices.models.connectivityModel.verdor import Vendor, VendorSession
 from squadServices.models.smpp.smppSMS import (
     DLREvent,
     MessageAttempt,
@@ -17,7 +18,11 @@ import smpplib.exceptions
 from squadServices.models.detailedReport.detailedReport import (
     DetailedSMSReport,
 )
+import smpplib.smpp
 from django.utils import timezone
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+from django.db import transaction
 
 # Turn on X-Ray Vision for raw network packets
 # logging.basicConfig(level=logging.DEBUG)
@@ -36,84 +41,76 @@ class Command(BaseCommand):
         # This maps the SMPP Sequence Number to our Database PART ID
         self.sequence_to_part_id = {}
         self.last_sweep_time = 0
+        self.last_enquire_link = {}  # ⚡️ Tracks heartbeat
+
+    def broadcast_vendor_status(self, vendor_id, host, status):
+        """Helper to push live Vendor status to the React Dashboard"""
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            "dashboard_updates",  # The group name from your Consumer
+            {
+                "type": "vendor_bind_change",  # This triggers the function in consumers.py!
+                "vendor_id": vendor_id,
+                "smpp_host": host,
+                "bind_status": status,
+            },
+        )
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("Starting Multi-Gateway SMPP Manager..."))
+        Vendor.objects.update(bindStatus="OFFLINE")
+        try:
+            while True:
+                try:
+                    active_vendors = Vendor.objects.filter(
+                        isDeleted=False
+                    ).select_related("smpp")
 
-        while True:
-            try:
-                # ---> 1. Professionally clean up unresponsive vendor messages first
-                # ONLY run the sweeper once every 60 seconds to save database performance
-                if time.time() - self.last_sweep_time > 60:
-                    self.sweep_stale_submissions()
-                    self.last_sweep_time = time.time()  # Reset the clock
-                # STEP 1: Process Outgoing Queue (NOW PULLING PARTS, NOT PARENT MESSAGES)
-                # We use select_related to easily access the parent message's config
-                queued_parts = (
-                    SMSMessagePart.objects.filter(submit_status="QUEUED")
-                    .select_related("message", "message__smpp")
-                    .order_by("message__createdAt", "part_no")[
-                        :10
-                    ]  # worker constantly polls the database for up to 10 SMSMessagePart rows where submit_status="QUEUED"
-                )
-
-                for part in queued_parts:
-                    parent_msg = part.message
-                    if parent_msg.status == "failed":
-                        part.submit_status = "FAILED"
-                        part.failed_at = timezone.now()
-                        part.failure_reason = (
-                            "Cancelled: Parent message already failed."
-                        )
-                        part.save(
-                            update_fields=[
-                                "submit_status",
-                                "failed_at",
-                                "failure_reason",
-                            ]
-                        )
-                        continue
-                    # ------------------------------------------------
-                    if not parent_msg.smpp:
-                        part.submit_status = "FAILED"
-                        part.save()
-                        continue
-
-                    smpp_id = parent_msg.smpp.id
-                    # Instead of opening a brand new connection for every single text message
-                    # (which would be incredibly slow and get you blocked by the vendor),
-                    # this code uses a "Connection Pool" and a "Cooldown Timer."
-                    # Connection Management
-
-                    # Think of self.sessions as a dictionary of active phone calls.
-                    # If you already have an open line to "RouteMobile" (smpp_id = 1),
-                    # it skips this entire block and reuses the open line.
-                    if smpp_id not in self.sessions:
-                        # If you aren't connected, it checks exactly what time you last tried to connect.
-                        last_attempt = getattr(self, f"last_attempt_{smpp_id}", 0)
-                        if time.time() - last_attempt < 10:
-                            continue
-
-                        setattr(self, f"last_attempt_{smpp_id}", time.time())
-                        self.stdout.write(
-                            f"Connecting to {parent_msg.smpp.smppHost}..."
-                        )
-                        client = self.connect_to_gateway(parent_msg.smpp)
-                        print("Client after connection attempt:", client)
-                        if client:
-                            # If the connection succeeds, it saves the active connection object into the dictionary
-                            # so the next message in the queue can use it instantly.
-                            self.sessions[smpp_id] = client
-                        else:
-                            self.stdout.write(
-                                self.style.ERROR(
-                                    f"Connection to Vendor {smpp_id} failed! Marking part as FAILED."
+                    # Starts a connection to the Vendor SMPP server
+                    # First it checks self.session if the vendor is already connected
+                    # if it is not connected then it will connect
+                    for vendor in active_vendors:
+                        if vendor.smpp:
+                            smpp_id = vendor.smpp.id
+                            # If we are not connected to this vendor's SMPP, try to connect!
+                            if smpp_id not in self.sessions:
+                                # 10-second cooldown so we don't spam the vendor's server if it's down
+                                last_attempt = getattr(
+                                    self, f"last_attempt_{smpp_id}", 0
                                 )
-                            )
+                                if time.time() - last_attempt > 10:
+                                    setattr(
+                                        self, f"last_attempt_{smpp_id}", time.time()
+                                    )
+                                    self.stdout.write(
+                                        f"Background: Connecting to {vendor.smpp.smppHost}..."
+                                    )
+
+                                    client = self.connect_to_gateway(vendor.smpp)
+                                    if client:
+                                        self.sessions[smpp_id] = client
+                    # ---> 1. Professionally clean up unresponsive vendor messages first
+                    # ONLY run the sweeper once every 60 seconds to save database performance
+                    if time.time() - self.last_sweep_time > 60:
+                        self.sweep_stale_submissions()
+                        self.last_sweep_time = time.time()  # Reset the clock
+                    # STEP 1: Process Outgoing Queue (NOW PULLING PARTS, NOT PARENT MESSAGES)
+                    # We use select_related to easily access the parent message's config
+                    queued_parts = (
+                        SMSMessagePart.objects.filter(submit_status="QUEUED")
+                        .select_related("message", "message__smpp")
+                        .order_by("message__createdAt", "part_no")[
+                            :10
+                        ]  # worker constantly polls the database for up to 10 SMSMessagePart rows where submit_status="QUEUED"
+                    )
+
+                    for part in queued_parts:
+                        parent_msg = part.message
+                        if parent_msg.status == "failed":
                             part.submit_status = "FAILED"
                             part.failed_at = timezone.now()
                             part.failure_reason = (
-                                "Vendor Connection Failed (Server Down/Timeout)."
+                                "Cancelled: Parent message already failed."
                             )
                             part.save(
                                 update_fields=[
@@ -122,38 +119,145 @@ class Command(BaseCommand):
                                     "failure_reason",
                                 ]
                             )
+                            continue
+                        # ------------------------------------------------
+                        if not parent_msg.smpp:
+                            part.submit_status = "FAILED"
+                            part.save()
+                            continue
 
-                            # Ensure the parent message also knows it failed!
+                        smpp_id = parent_msg.smpp.id
+                        # Instead of opening a brand new connection for every single text message
+                        # (which would be incredibly slow and get you blocked by the vendor),
+                        # this code uses a "Connection Pool" and a "Cooldown Timer."
+                        # Connection Management
+
+                        # Think of self.sessions as a dictionary of active phone calls.
+                        # If you already have an open line to "RouteMobile" (smpp_id = 1),
+                        # it skips this entire block and reuses the open line.
+
+                        # ⚡️ CLEANER LOGIC: Block 0 handles connecting. If it's missing, it's Offline.
+                        if smpp_id not in self.sessions:
+                            part.submit_status = "FAILED"
+                            part.failed_at = timezone.now()
+                            part.failure_reason = "Vendor Offline (System is attempting to reconnect in background)."
+                            part.save(
+                                update_fields=[
+                                    "submit_status",
+                                    "failed_at",
+                                    "failure_reason",
+                                ]
+                            )
                             self.update_parent_message_status(parent_msg)
                             continue
 
-                    # Send the specific part
-                    client = self.sessions[smpp_id]
-                    self.send_single_part(client, part, parent_msg.smpp)
+                        # Send the specific part
+                        client = self.sessions[smpp_id]
+                        self.send_single_part(client, part, parent_msg.smpp)
 
-                # STEP 2: Listen for DLRs on all active sessions
-                for smpp_id, client in list(self.sessions.items()):
-                    try:
-                        client.read_once()
-                    except socket.timeout:
-                        pass
-                    except (smpplib.exceptions.ConnectionError, OSError):
-                        self.stdout.write(
-                            self.style.ERROR(f"Lost connection to Gateway {smpp_id}")
-                        )
-                        del self.sessions[smpp_id]
+                    # ==============================================================================
+                    # STEP 2: Listen for DLRs on all active sessions
+                    # ==============================================================================
 
-                if not queued_parts:
-                    time.sleep(1)
+                    current_time = time.time()
+                    for smpp_id, client in list(self.sessions.items()):
+                        try:
+                            client.read_once()
+                            # ⚡️ THE PULSE CHECK (Heartbeat)
+                            last_ping = self.last_enquire_link.get(smpp_id, 0)
+                            if current_time - last_ping > 30:
+                                pdu = smpplib.smpp.make_pdu(
+                                    "enquire_link", client=client
+                                )
+                                client.send_pdu(pdu)
+                                self.last_enquire_link[smpp_id] = current_time
+                        except socket.timeout:
+                            pass
+                        except (smpplib.exceptions.ConnectionError, OSError):
+                            self.stdout.write(
+                                self.style.ERROR(
+                                    f"Lost connection to Gateway {smpp_id}"
+                                )
+                            )
+                            del self.sessions[smpp_id]
+                            # ⚡️ DB UPDATE & WEBSOCKET BROADCAST (OFFLINE)
+                            vendors_offline = Vendor.objects.filter(smpp_id=smpp_id)
+                            vendors_offline.update(bindStatus="OFFLINE")
+                            # In your finally cleanup:
+                            if hasattr(client, "db_session_ids"):
+                                VendorSession.objects.filter(
+                                    sessionId__in=client.db_session_ids
+                                ).update(
+                                    status="OFFLINE", disconnectedAt=timezone.now()
+                                )
+                            channel_layer = get_channel_layer()
+                            for v in vendors_offline:
+                                async_to_sync(channel_layer.group_send)(
+                                    "dashboard_updates",
+                                    {
+                                        "type": "vendor_session_change",
+                                        "vendor_id": v.id,
+                                        "status": "OFFLINE",
+                                    },
+                                )
+                                host_name = v.smpp.smppHost if v.smpp else "Unknown"
+                                self.broadcast_vendor_status(v.id, host_name, "OFFLINE")
 
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                logger.error(f"Global Loop Error: {e}")
-                time.sleep(2)
+                    if not queued_parts:
+                        time.sleep(1)
+
+                except KeyboardInterrupt:
+                    break
+                except Exception as e:
+                    logger.error(f"Global Loop Error: {e}")
+                    time.sleep(2)
+        except KeyboardInterrupt:
+            self.stdout.write(
+                self.style.WARNING("\nStopping Manager... Cleaning up binds.")
+            )
+
+        finally:
+            # ⚡️ THE FINAL CLEANUP (Runs on Ctrl+C)
+            self.stdout.write("Broadcasting OFFLINE status to all vendors...")
+            channel_layer = get_channel_layer()
+            # 1. Loop through active sessions to mark them OFFLINE in the DB
+            for smpp_id, cli in self.sessions.items():
+                if hasattr(cli, "db_session_ids"):
+                    VendorSession.objects.filter(
+                        sessionId__in=cli.db_session_ids
+                    ).update(status="OFFLINE", disconnectedAt=timezone.now())
+                associated_vendors = Vendor.objects.filter(smpp_id=smpp_id)
+                for v in associated_vendors:
+                    async_to_sync(channel_layer.group_send)(
+                        "dashboard_updates",
+                        {
+                            "type": "vendor_session_change",
+                            "vendor_id": v.id,
+                            "status": "OFFLINE",
+                        },
+                    )
+                try:
+                    cli.disconnect()
+                except:
+                    pass
+
+            # 2. Update the main Vendor Table
+            Vendor.objects.filter(isDeleted=False).update(bindStatus="OFFLINE")
+
+            # 3. Final WebSocket Broadcast to update the React UI
+            all_vendors = Vendor.objects.filter(isDeleted=False).select_related("smpp")
+            for v in all_vendors:
+                try:
+                    host_name = v.smpp.smppHost if v.smpp else "Unknown"
+                    self.broadcast_vendor_status(v.id, host_name, "OFFLINE")
+                except:
+                    pass
+
+            self.stdout.write(self.style.SUCCESS("Cleanup complete. Goodbye!"))
 
     # This method establishes a connection to the SMPP gateway and binds as per the configuration
     def connect_to_gateway(self, config):
+        client = None
         try:
             # This opens the raw TCP socket to the vendor's IP address and Port (like dialing a phone number).
             client = smpplib.client.Client(config.smppHost, config.smppPort, timeout=1)
@@ -192,9 +296,52 @@ class Command(BaseCommand):
                     system_id=config.systemID, password=config.password
                 )
 
+            # 1. Update all related vendors to ONLINE
+            with transaction.atomic():
+                vendors_qs = Vendor.objects.filter(smpp=config)
+                vendors_qs.update(bindStatus="ONLINE")
+
+                # 2. Track these session IDs in a list
+                session_ids = []
+                channel_layer = get_channel_layer()  # ⚡️ Get Layer
+                for v in vendors_qs:
+                    # Notify the React Dashboard via WebSocket
+                    self.broadcast_vendor_status(v.id, config.smppHost, "ONLINE")
+
+                    # ⚡️ Create a session record for EVERY vendor sharing this line
+                    session = VendorSession.objects.create(
+                        vendor=v,
+                        gatewayIp=config.smppHost,
+                        bindType=config.bindMode,
+                        status="ONLINE",
+                    )
+                    session_ids.append(session.sessionId)
+                    # ⚡️ ADD THIS HERE: Notify Dashboard of the new SESSION
+                    async_to_sync(channel_layer.group_send)(
+                        "dashboard_updates",
+                        {
+                            "type": "vendor_session_change",
+                            "vendor_id": v.id,
+                            "status": "ONLINE",
+                        },
+                    )
+                # 3. Attach the list of session IDs to the client
+                # This ensures that when the socket drops, ALL session records are closed.
+                client.db_session_ids = session_ids
+            self.stdout.write(
+                self.style.SUCCESS(f"Vendor BOUND: {config.smppHost} is now ONLINE")
+            )
             return client
         except Exception as e:
             logger.error(f"Connect failed: {e}")
+            # ⚡️ THE FIX: Professionally close the socket to prevent memory leaks
+            if client:
+                try:
+                    # Silently close raw socket to avoid the yellow warning
+                    if hasattr(client, "sock") and client.sock:
+                        client.sock.close()
+                except:
+                    pass
             return None
 
     def send_single_part(self, client, part, config):

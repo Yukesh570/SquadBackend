@@ -21,29 +21,21 @@ from squadServices.serializer.connectivitySerializer.vendorSerializer import (
 from squadServices.serializer.vendorClientPolicySerializer import VendorPolicySerializer
 
 
-class VendorFilter(django_filters.FilterSet):
-    companyName = django_filters.CharFilter(
-        field_name="company__name", lookup_expr="icontains"
-    )
-    profileName = django_filters.CharFilter(lookup_expr="icontains")
-    connectionType = django_filters.CharFilter(lookup_expr="icontains")
-    createdAt = django_filters.DateFromToRangeFilter()
-    smppName = django_filters.CharFilter(
-        field_name="smpp_smppHost", lookup_expr="icontains"
-    )
+class VendorFilter(ExtendedFilterSet):
 
     class Meta:
         model = Vendor
-        fields = [
-            "companyName",
-            "profileName",
-            "connectionType",
-            "smppName",
-            "createdAt",
-        ]
+        fields = {
+            "company__name": ["exact", "icontains", "isnull"],
+            "profileName": ["exact", "icontains", "isnull"],
+            "connectionType": ["exact", "icontains", "isnull"],
+            "bindStatus": ["exact", "icontains", "isnull"],
+            "invoicePolicy": ["exact", "icontains", "isnull"],
+            "smpp__smppHost": ["exact", "icontains", "isnull"],
+            "createdAt": ["exact", "gt", "lt", "range", "isnull"],
+        }
 
 
-# re
 class VendorViewSet(viewsets.ModelViewSet):
     serializer_class = VendorSerializer
     permission_classes = [permissions.IsAuthenticated]

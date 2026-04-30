@@ -1130,6 +1130,7 @@ class VendorPolicyAdmin(admin.ModelAdmin):
     list_display = (
         "vendor",
         "rateTps",
+        "maxSession",
         "sendQueueLimit",
         "responseTimeout",
         "logLevel",
@@ -1164,7 +1165,14 @@ class VendorPolicyAdmin(admin.ModelAdmin):
         ),
         (
             "Timeouts & Heartbeats",
-            {"fields": ("responseTimeout", "enquireLinkInterval", "connectionTimeout")},
+            {
+                "fields": (
+                    "maxSession",
+                    "responseTimeout",
+                    "enquireLinkInterval",
+                    "connectionTimeout",
+                )
+            },
         ),
         (
             "Retries & Recovery",
