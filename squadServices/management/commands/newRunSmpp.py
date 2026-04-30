@@ -75,17 +75,35 @@ class Command(BaseCommand):
                             # If we are not connected to this vendor's SMPP, try to connect!
                             if smpp_id not in self.sessions:
                                 # 10-second cooldown so we don't spam the vendor's server if it's down
-                                last_attempt = getattr(
-                                    self, f"last_attempt_{smpp_id}", 0
+                                last_attempt_ts = (
+                                    vendor.lastAttemptAt.timestamp()
+                                    if vendor.lastAttemptAt
+                                    else 0
                                 )
-                                if time.time() - last_attempt > 10:
-                                    setattr(
-                                        self, f"last_attempt_{smpp_id}", time.time()
+                                manual_retry_requested = False
+                                if vendor.lastRetryAt:
+                                    if vendor.lastRetryAt.timestamp() > last_attempt_ts:
+                                        manual_retry_requested = True
+
+                                # 3. Determine if we should try connecting now
+                                cooldown_passed = time.time() - last_attempt_ts > 30
+
+                                if cooldown_passed or manual_retry_requested:
+                                    reason = (
+                                        "MANUAL RETRY"
+                                        if manual_retry_requested
+                                        else "AUTO RETRY"
                                     )
+                                    self.stdout.write(
+                                        self.style.MIGRATE_LABEL(
+                                            f"[{reason}] Connecting to {vendor.smpp.smppHost}..."
+                                        )
+                                    )
+                                    vendor.lastAttemptAt = timezone.now()
+                                    vendor.save(update_fields=["lastAttemptAt"])
                                     self.stdout.write(
                                         f"Background: Connecting to {vendor.smpp.smppHost}..."
                                     )
-
                                     client = self.connect_to_gateway(vendor.smpp)
                                     if client:
                                         self.sessions[smpp_id] = client

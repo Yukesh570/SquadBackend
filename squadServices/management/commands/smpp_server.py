@@ -37,6 +37,7 @@ import uuid
 import redis.asyncio as redis
 from channels.layers import get_channel_layer
 from logging.handlers import RotatingFileHandler
+import time
 
 # from squadServices.models.transaction import transaction
 
@@ -97,6 +98,31 @@ class Command(BaseCommand):
         super().__init__(*args, **kwargs)
         self.active_clients = {}  # Dictionary to hold open TCP connections
         self.route_cache = {}  # ⚡️ ADD THIS
+        self.client_tps_trackers = {}
+
+    # check_rate_limit is run every time a message is received annd from it it calculate the tps by using count to count how man msg came in a second.
+    # it only put count result of 1 second and if the second changes it reset the count to 0 and start counting for the new second,
+    # so if the count exceed the max tps in that second it return false and if not it return true and allow the message to be processed
+    def check_rate_limit(self, username, max_tps):
+        """Returns True if allowed, False if limit exceeded"""
+        if max_tps == 0:  # 0 means unlimited
+            return True
+
+        current_second = int(time.time())
+        tracker = self.client_tps_trackers.setdefault(
+            username, {"second": current_second, "count": 0}
+        )
+
+        # If we moved to a new second, reset the counter
+        if tracker["second"] != current_second:
+            tracker["second"] = current_second
+            tracker["count"] = 0
+
+        if tracker["count"] >= max_tps:
+            return False
+
+        tracker["count"] += 1
+        return True
 
     async def generate_message_id(self):  # If it has 'async'
         return str(uuid.uuid4())
@@ -235,10 +261,12 @@ class Command(BaseCommand):
         we don't know the destination number until the SUBMIT_SM command!
         """
         try:
-            client = Client.objects.filter(
-                smppUsername=username, smppPassword=password, isDeleted=False
-            ).first()
-            clientStatus = client.status
+            client = (
+                Client.objects.select_related("clientPolicy")
+                .filter(smppUsername=username, smppPassword=password, isDeleted=False)
+                .first()
+            )
+
             if not client:
                 logger.warning(
                     f"Auth Failed: Invalid credentials or deleted account for '{username}'."
@@ -360,8 +388,26 @@ class Command(BaseCommand):
         # ------------------------------
         try:
             while True:
+                idle_timeout = 60
+                if hasattr(writer, "policy") and writer.policy:
+                    idle_timeout = writer.policy.idleTimeoutSec
+                # print(
+                #     f"🛑client will be disconnected in exactly {idle_timeout} seconds if they don't speak."
+                # )
                 # 1. Read SMPP Header
-                header_data = await reader.read(16)
+                # and also checks policy.idleTimeoutSec if it exceeds that time it is kicked out
+                # of the server to save RAM
+                try:
+                    # ⚡️ ENFORCE IDLE TIMEOUT
+                    header_data = await asyncio.wait_for(
+                        reader.readexactly(16), timeout=idle_timeout
+                    )
+                except asyncio.TimeoutError:
+                    identifier = system_id_logged_in or client_ip
+                    logger.warning(
+                        f"Removing {identifier}: Idle for over {idle_timeout} seconds."
+                    )
+                    break  # This breaks the loop, triggering your finally: block to disconnect them!
                 if not header_data or len(header_data) < 16:
 
                     # it then goes to finally
@@ -434,40 +480,39 @@ class Command(BaseCommand):
                     client_obj = await self.authenticate_client(system_id, password)
 
                     if client_obj:
-                        # policy = await sync_to_async(
-                        #     lambda: getattr(client_obj, "clientPolicy", None)
-                        # )()
-                        # writer.policy = policy  # Attach it to the session
-
                         # # ⚡️ ENFORCE: Max Sessions Check
                         # # scans your server's memory to see how many times this specific client is already connected.
 
+                        # ⚡️ 1. Safely grab the policy and attach it to the writer
+                        policy = getattr(client_obj, "clientPolicy", None)
+                        writer.policy = policy
+
+                        max_allowed_sessions = policy.maxSessions if policy else 2
+                        # get the total session of a particular client
                         # # it count how many times the client is currently connected by looking at the active_clients dictionary,
                         # # Every time it finds the client from that specific client_obj, it counts 1 2 3....
-                        # current_sessions = sum(
-                        #     1
-                        #     for w in self.active_clients.values()  # This looks at all currently connected clients
-                        #     if getattr(w, "client_obj", None) == client_obj
-                        # )
+                        current_sessions = sum(
+                            1
+                            for w in self.active_clients.values()
+                            if getattr(w, "client_obj", None) == client_obj
+                        )
 
-                        # # Then it checks if that counted number(current_sessions) exceeds the maxSessions limit defined in the client's policy.
-                        # # If it does, it blocks the login attempt and sends back a specific error message (Status 8: Too Many Sessions).
-                        # if current_sessions >= max_allowed:
-                        #     logger.warning(
-                        #         f"Blocking {system_id}: Too many active sessions ({current_sessions}/{max_allowed})"
-                        #     )
-                        #     await self.send_bind_error_with_tlv(
-                        #         writer, cmd_id, 0x00000008, seq_num, "Too many sessions"
-                        #     )
-                        #     writer.close()
-                        #     return
-
-                        # print(
-                        #     f"Current sessions for=========== {system_id}: {current_sessions}"
-                        # )
-                        # max_allowed = (
-                        #     policy.maxSessions if policy else 2
-                        # )  # default fallback
+                        # Checking if the client have crossed the maxAllocatedSessions
+                        if max_allowed_sessions != 0:
+                            if current_sessions >= max_allowed_sessions:
+                                logger.warning(
+                                    f"Blocking {system_id}: Too many active sessions ({current_sessions}/{max_allowed_sessions})"
+                                )
+                                # 0x00000005 is standard SMPP for "Already Bound / Too Many Binds"
+                                await self.send_bind_error_with_tlv(
+                                    writer,
+                                    cmd_id,
+                                    0x00000005,
+                                    seq_num,
+                                    f"Max sessions ({max_allowed_sessions}) reached.",
+                                )
+                                writer.close()
+                                return
                         if client_obj.status not in ["ACTIVE", "TRIAL"]:
                             logger.warning(
                                 f"Blocking {system_id}: Account is {client_obj.status}."
@@ -520,6 +565,7 @@ class Command(BaseCommand):
                         # for that client connection, so when the next client connects it new writer
                         writer.db_session_id = current_session_id
                         self.active_clients[system_id] = writer
+
                         # 🚀 FIRE THE WEBSOCKET (Session Table Update)
                         await self.broadcast_session_update(
                             current_session_id,
@@ -604,6 +650,9 @@ class Command(BaseCommand):
                         writer, CMD_ENQUIRE_LINK_RESP, ESME_ROK, seq_num, b""
                     )
                     db_sess_id = getattr(writer, "db_session_id", None)
+
+                    # UPDATE THE SESSION ACTIVITY TIMESTAMP IN THE DATABASE WHENEVER AN ENQUIRE_LINK IS RECEIVED.
+                    # THIS HELPS YOU TRACK ACTIVE SESSIONS AND IMPLEMENT IDLE TIMEOUTS IF NEEDED.
                     if db_sess_id:
                         await self.update_session_activity(db_sess_id)
 
@@ -1304,9 +1353,34 @@ class Command(BaseCommand):
                 f"Message too long. Max segments allowed: {MAX_ALLOWED_SEGMENTS}.",
             )
             return None
-
         final_concat_ref = secrets.randbelow(256) if total_segments > 1 else None
 
+        # ==========================================
+        # POLICY ENFORCEMENT (TPS & SENDER ID)
+        # ==========================================
+        policy = getattr(writer, "policy", None)
+
+        max_tps = policy.maxTps if policy else 50
+        if not self.check_rate_limit(client_obj.smppUsername, max_tps):
+            logger.warning(
+                f"🚦 Throttled: {client_obj.smppUsername} exceeded {max_tps} TPS limit."
+            )
+            # 0x00000058 is the official SMPP "Throttling Error"
+            # Throttling Error= You are sending messages too fast. Slow down and try again later
+            await self.send_pdu(writer, CMD_SUBMIT_SM_RESP, 0x00000058, seq_num, b"\0")
+            return None
+        # # 2. SENDER ID POLICY CHECK
+        # sender_policy = policy.senderIdPolicy if policy else "approvedOnly"
+        # if sender_policy == "approvedOnly":
+        #     # Basic check: Reject if Sender ID is empty or 'Unknown'
+        #     if not source_addr or source_addr.upper() == "UNKNOWN":
+        #         logger.warning(
+        #             f"🚫 Blocked: {client_obj.smppUsername} used unapproved Sender ID: {source_addr}"
+        #         )
+        #         await self.send_error_with_tlv(
+        #             writer, seq_num, "Sender ID not approved."
+        #         )
+        #         return None
         # ==========================================
         # 5. THE BULK ROUTING & BILLING LOOP
         # ==========================================
@@ -1436,6 +1510,8 @@ class Command(BaseCommand):
     #     return parent_msg
 
     # TLV = Type-Length-Value
+
+    # This function is used after the client is already logged in
     async def send_error_with_tlv(self, writer, seq, error_msg="Low Balance"):
         """Bypasses strict SMPP rules by faking a success to deliver the text."""
         cmd_id = CMD_SUBMIT_SM_RESP  # submit_sm_resp
@@ -1454,6 +1530,7 @@ class Command(BaseCommand):
         writer.write(header + safe_msg)
         await writer.drain()
 
+    # This function is used during the handshake/login phase
     async def send_bind_error_with_tlv(
         self, writer, cmd_id, status, seq, error_msg="Bind Failed"
     ):

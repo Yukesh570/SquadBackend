@@ -22,6 +22,7 @@ class VendorSerializer(serializers.ModelSerializer):
             "smppName",
             "connectionType",
             "session",
+            "lastRetryAt",
             "createdAt",
         ]
 

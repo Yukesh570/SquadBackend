@@ -372,7 +372,7 @@ class vendorAdmin(admin.ModelAdmin):
         "updatedAt",
     )
     search_fields = ("company", "profileName")
-    readonly_fields = ("createdAt", "updatedAt")
+    readonly_fields = ("createdAt", "updatedAt", "lastAttemptAt", "lastRetryAt")
 
 
 class clientAdmin(admin.ModelAdmin):

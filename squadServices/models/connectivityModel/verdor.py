@@ -50,6 +50,8 @@ class Vendor(models.Model):
         choices=POLICY_CHOICES,
         default="ON ATTEMPT",
     )
+    lastAttemptAt = models.DateTimeField(null=True, blank=True)
+    lastRetryAt = models.DateTimeField(null=True, blank=True)
     isDeleted = models.BooleanField(default=False)
     createdBy = models.ForeignKey(
         settings.AUTH_USER_MODEL,
