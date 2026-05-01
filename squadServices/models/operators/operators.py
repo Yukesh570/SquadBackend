@@ -68,7 +68,6 @@ class OperatorNetworkCode(models.Model):
     def mcc_mnc(self):
         return f"{self.MCC}{self.MNC}"
 
-    networkName = models.CharField(max_length=150, null=True, blank=True)
     networkType = models.CharField(
         max_length=10, choices=NETWORK_TYPES, default="UNKNOWN"
     )
@@ -100,6 +99,7 @@ class OperatorNetworkCode(models.Model):
     updatedAt = models.DateTimeField(auto_now=True)
 
     class Meta:
+        ordering = ["-updatedAt"]
         db_table = "squadServices_operatornetworkcode"
         unique_together = ("operator", "MCC", "MNC")
         indexes = [

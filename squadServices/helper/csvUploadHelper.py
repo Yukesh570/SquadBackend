@@ -191,7 +191,7 @@ onc_csv_file_param = openapi.Parameter(
     description=(
         "Upload a CSV file to import Operator Network Codes.\n\n"
         "**Expected CSV Headers:**\n"
-        "`operator_name`, `country_name`, `MCC`, `MNC`, `networkName`, `networkType`, `isPrimary`, `status`, `effectiveFrom`, `effectiveTo`, `notes`\n\n"
+        "`operator_name`, `country_name`, `MCC`, `MNC`, `networkType`, `isPrimary`, `status`, `effectiveFrom`, `effectiveTo`, `notes`\n\n"
         "*(Note: Dates must be in YYYY-MM-DD format)*"
     ),
     type=openapi.TYPE_FILE,

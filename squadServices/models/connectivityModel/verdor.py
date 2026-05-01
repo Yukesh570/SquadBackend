@@ -87,12 +87,6 @@ class VendorPolicy(models.Model):
     vendor = models.OneToOneField(
         Vendor, on_delete=models.CASCADE, related_name="policy"
     )
-    sourceAddrTon = models.IntegerField(default=5, help_text="Source Addr Ton")
-    sourceAddrNpi = models.IntegerField(default=0, help_text="Source Addr NPI")
-    destAddrTon = models.IntegerField(default=1, help_text="Destination Addr Ton")
-    destAddrNpi = models.IntegerField(default=1, help_text="Destination Addr NPI")
-    addrTon = models.IntegerField(default=1, null=True, blank=True)
-    addrNpi = models.IntegerField(default=1, null=True, blank=True)
 
     # --- 2. SPEED & QUEUEING ---
     rateTps = models.IntegerField(

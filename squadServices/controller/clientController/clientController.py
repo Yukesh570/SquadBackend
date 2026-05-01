@@ -16,7 +16,9 @@ from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
-
+from django.shortcuts import get_object_or_404
+from rest_framework import viewsets, permissions, status
+from rest_framework.response import Response
 from squadServices.models.clientModel.client import (
     Client,
     ClientPolicy,
@@ -33,6 +35,7 @@ from squadServices.serializer.clientSerializer.clientSerializer import (
     PuskarClientSerializer,
 )
 from rest_framework.permissions import AllowAny
+from django_filters import rest_framework as filters
 
 from squadServices.serializer.vendorClientPolicySerializer import ClientPolicySerializer
 from squadServices.serializer.vendorClientSessionSerializer import (
@@ -241,6 +244,7 @@ class IpWhiteListViewSet(viewsets.ModelViewSet):
 
 
 class ClientPolicyFilter(ExtendedFilterSet):
+    client = filters.NumberFilter(field_name="client_id", lookup_expr="exact")
 
     class Meta:
         model = ClientPolicy
@@ -265,16 +269,16 @@ class ClientPolicyViewSet(viewsets.ModelViewSet):
     filterset_class = ClientPolicyFilter
 
     def get_queryset(self):
-        module = self.kwargs.get("module")
-        check_permission(self, "read", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "read", module)
         return ClientPolicy.objects.filter(isDeleted=False)
 
     def create(self, request, *args, **kwargs):
         """
         Intercept the creation process to handle soft-deleted OneToOne records.
         """
-        module = self.kwargs.get("module")
-        check_permission(self, "write", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "write", module)
 
         client_id = request.data.get("client")
 
@@ -314,24 +318,40 @@ class ClientPolicyViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        module = self.kwargs.get("module")
+        # module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, "write", module)
+        # check_permission(self, "write", module)
 
         instance = serializer.save(createdBy=user, updatedBy=user)
         log_action_create(user, "ClientPolicy", f"{instance.client.name} Policy")
 
     def perform_update(self, serializer):
-        module = self.kwargs.get("module")
-        check_permission(self, "put", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "put", module)
 
         user = self.request.user
         instance = serializer.save(updatedBy=user)
         log_action_update(user, "ClientPolicy", f"{instance.client.name} Policy")
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Override destroy to treat the URL parameter as the client_id
+        instead of the ClientPolicy primary key.
+        """
+        # kwargs.get("pk") grabs the ID passed in the URL: /api/clientPolicy/<client_id>/
+        client_id = kwargs.get("pk")
+
+        # Look up the policy associated with this client_id
+        instance = get_object_or_404(ClientPolicy, client_id=client_id, isDeleted=False)
+
+        # Call perform_destroy to execute your custom soft-delete logic
+        self.perform_destroy(instance)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     def perform_destroy(self, instance):
-        module = self.kwargs.get("module")
-        check_permission(self, "delete", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "delete", module)
         user = self.request.user
         instance.isDeleted = True
         instance.updatedBy = user

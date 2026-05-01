@@ -6,6 +6,11 @@ from squadServices.helper.action import (
     log_action_delete,
     log_action_update,
 )
+from rest_framework.response import Response
+
+from django.shortcuts import get_object_or_404
+from rest_framework import viewsets, permissions, status
+from django_filters import rest_framework as filters
 from squadServices.helper.pagination import StandardResultsSetPagination
 from squadServices.helper.permissionHelper import check_permission
 from rest_framework.exceptions import ValidationError
@@ -86,17 +91,13 @@ class VendorViewSet(viewsets.ModelViewSet):
 
 
 class VendorPolicyFilter(ExtendedFilterSet):
+    vendor = filters.NumberFilter(field_name="vendor_id", lookup_expr="exact")
 
     class Meta:
         model = VendorPolicy
         fields = {
+            "vendor": ["exact", "isnull"],
             "vendor__profileName": ["exact", "icontains", "isnull"],
-            "sourceAddrTon": ["exact", "icontains", "isnull"],
-            "sourceAddrNpi": ["exact", "icontains", "isnull"],
-            "destAddrTon": ["exact", "icontains", "isnull"],
-            "destAddrNpi": ["exact", "icontains", "isnull"],
-            "addrTon": ["exact", "icontains", "isnull"],
-            "addrNpi": ["exact", "icontains", "isnull"],
             "rateTps": ["exact", "icontains", "isnull"],
             "sendQueueLimit": ["exact", "icontains", "isnull"],
             "delayTime": ["exact", "icontains", "isnull"],
@@ -123,16 +124,16 @@ class VendorPolicyViewSet(viewsets.ModelViewSet):
     filterset_class = VendorPolicyFilter
 
     def get_queryset(self):
-        module = self.kwargs.get("module")
-        check_permission(self, "read", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "read", module)
         return VendorPolicy.objects.filter(isDeleted=False)
 
     def create(self, request, *args, **kwargs):
         """
         Intercept the creation process to handle soft-deleted OneToOne records.
         """
-        module = self.kwargs.get("module")
-        check_permission(self, "write", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "write", module)
 
         vendor_id = request.data.get("vendor")
 
@@ -172,24 +173,39 @@ class VendorPolicyViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        module = self.kwargs.get("module")
+        # module = self.kwargs.get("module")
         user = self.request.user
-        check_permission(self, "write", module)
+        # check_permission(self, "write", module)
 
         instance = serializer.save(createdBy=user, updatedBy=user)
         log_action_create(user, "VendorPolicy", f"{instance.vendor.profileName} Policy")
 
     def perform_update(self, serializer):
-        module = self.kwargs.get("module")
-        check_permission(self, "put", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "put", module)
 
         user = self.request.user
         instance = serializer.save(updatedBy=user)
         log_action_update(user, "VendorPolicy", f"{instance.vendor.profileName} Policy")
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Override destroy to treat the URL parameter as the vendor_id
+        instead of the ClientPolicy primary key.
+        """
+        vendor_id = kwargs.get("pk")
+
+        # Look up the policy associated with this client_id
+        instance = get_object_or_404(VendorPolicy, vendor_id=vendor_id, isDeleted=False)
+
+        # Call perform_destroy to execute your custom soft-delete logic
+        self.perform_destroy(instance)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     def perform_destroy(self, instance):
-        module = self.kwargs.get("module")
-        check_permission(self, "delete", module)
+        # module = self.kwargs.get("module")
+        # check_permission(self, "delete", module)
         user = self.request.user
         instance.isDeleted = True
         instance.updatedBy = user

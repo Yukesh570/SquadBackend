@@ -69,23 +69,23 @@ class SMPPViewSet(viewsets.ModelViewSet):
         module = self.kwargs.get("module")
         user = self.request.user
         check_permission(self, "write", module)
-        systemID = serializer.validated_data.get("systemID")
-        exist = SMPP.objects.filter(systemID__iexact=systemID, isDeleted=False)
-        if exist.exists():
-            raise ValidationError({"error": "SMPP with this systemID already exists."})
+        # systemID = serializer.validated_data.get("systemID")
+        # exist = SMPP.objects.filter(systemID__iexact=systemID, isDeleted=False)
+        # if exist.exists():
+        # raise ValidationError({"error": "SMPP with this systemID already exists."})
         serializer.save(createdBy=user, updatedBy=user)
         log_action_create(user, "SMPP", serializer.validated_data.get("smppHost"))
 
     def perform_update(self, serializer):
         module = self.kwargs.get("module")
         check_permission(self, "put", module)
-        systemID = serializer.validated_data.get("systemID")
-        if systemID != serializer.instance.systemID:
-            exist = SMPP.objects.filter(systemID=systemID, isDeleted=False)
-            if exist.exists():
-                raise ValidationError(
-                    {"error": "SMPP with the same systemID already exists."}
-                )
+        # systemID = serializer.validated_data.get("systemID")
+        # if systemID != serializer.instance.systemID:
+        # exist = SMPP.objects.filter(systemID=systemID, isDeleted=False)
+        # if exist.exists():
+        # raise ValidationError(
+        # {"error": "SMPP with the same systemID already exists."}
+        # )
         user = self.request.user
         serializer.save(updatedBy=user)
         log_action_update(user, "SMPP", serializer.validated_data.get("smppHost"))

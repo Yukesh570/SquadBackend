@@ -1147,19 +1147,6 @@ class VendorPolicyAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Vendor Assignment", {"fields": ("vendor", "isDeleted")}),
         (
-            "Number Formatting (TON/NPI)",
-            {
-                "fields": (
-                    "sourceAddrTon",
-                    "sourceAddrNpi",
-                    "destAddrTon",
-                    "destAddrNpi",
-                    "addrTon",
-                    "addrNpi",
-                )
-            },
-        ),
-        (
             "Speed & Queue Limits",
             {"fields": ("rateTps", "sendQueueLimit", "delayTime")},
         ),
@@ -1226,7 +1213,7 @@ class ClientPolicyAdmin(admin.ModelAdmin):
         (
             "Throughput & Queueing",
             {
-                "fields": ("maxTps", "maxQueueDepth"),
+                "fields": ("maxTps", "maxQueueDepth", "senderIdPolicy"),
                 "description": "Limits on how fast the client can send messages and how many can be queued.",
             },
         ),
@@ -1273,7 +1260,6 @@ class OperatorNetworkCodeAdmin(admin.ModelAdmin):
         "operator",
         "MCC",
         "MNC",
-        "networkName",
         "networkType",
         "isPrimary",
         "status",
@@ -1292,14 +1278,13 @@ class OperatorNetworkCodeAdmin(admin.ModelAdmin):
     search_fields = (
         "MCC",
         "MNC",
-        "networkName",
         "operator__name",
         "country__name",
     )
 
     # 4. Grouping for better UX
     fieldsets = (
-        ("Network Identity", {"fields": ("country", "operator", "networkName")}),
+        ("Network Identity", {"fields": ("country", "operator")}),
         ("Technical Codes", {"fields": ("MCC", "MNC", "networkType")}),
         ("Configuration", {"fields": ("isPrimary", "status")}),
         (

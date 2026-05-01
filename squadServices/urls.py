@@ -397,7 +397,7 @@ urlpatterns = [
         name="client",
     ),
     path(
-        "clientPolicy/<str:module>/",
+        "clientPolicy/",
         ClientPolicyViewSet.as_view(
             {
                 "get": "list",
@@ -407,7 +407,7 @@ urlpatterns = [
         name="clientPolicy",
     ),
     path(
-        "clientPolicy/<str:module>/<int:pk>/",
+        "clientPolicy/<int:pk>/",
         ClientPolicyViewSet.as_view(
             {
                 "put": "update",
@@ -418,7 +418,7 @@ urlpatterns = [
         name="clientPolicy",
     ),
     path(
-        "vendorPolicy/<str:module>/",
+        "vendorPolicy/",
         VendorPolicyViewSet.as_view(
             {
                 "get": "list",
@@ -428,7 +428,7 @@ urlpatterns = [
         name="vendorPolicy",
     ),
     path(
-        "vendorPolicy/<str:module>/<int:pk>/",
+        "vendorPolicy/<int:pk>/",
         VendorPolicyViewSet.as_view(
             {
                 "put": "update",

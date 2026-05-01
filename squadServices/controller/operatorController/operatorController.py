@@ -98,7 +98,6 @@ class OperatorNetworkCodeFilter(ExtendedFilterSet):
             "MNC": ["exact", "icontains", "isnull"],
             "MCC": ["exact", "icontains", "isnull"],
             "status": ["exact", "icontains", "isnull"],
-            "networkName": ["exact", "icontains", "isnull"],
             "networkType": ["exact", "icontains", "isnull"],
             "isPrimary": ["exact", "icontains", "isnull"],
             "effectiveFrom": ["exact", "gt", "lt", "range", "isnull"],

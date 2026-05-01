@@ -35,7 +35,6 @@ class OperatorNetworkCodeSerializer(serializers.ModelSerializer):
             "country_iso",
             "MCC",
             "MNC",
-            "networkName",
             "networkType",
             "isPrimary",
             "status",

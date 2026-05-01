@@ -632,7 +632,7 @@ def import_currency_task(self, filepath, user_id, task_id):
 def import_operator_network_code_task(self, filepath, user_id, task_id):
     """
     Import Operator Network Codes from CSV.
-    Expected CSV headers: operator_name, country_name, MCC, MNC, networkName, networkType, isPrimary, status, effectiveFrom, effectiveTo, notes
+    Expected CSV headers: operator_name, country_name, MCC, MNC, networkType, isPrimary, status, effectiveFrom, effectiveTo, notes
     Dates must be in YYYY-MM-DD format.
     """
     redis_client.set(task_id, "0")  # initial progress
@@ -663,7 +663,6 @@ def import_operator_network_code_task(self, filepath, user_id, task_id):
                     country_name = row.get("country", "").strip()
                     mcc = row.get("MCC", "").strip()
                     mnc = row.get("MNC", "").strip()
-                    network_name = row.get("networkName", "").strip()
                     notes = row.get("notes", "").strip()
 
                     # 2. Extract and sanitize Choice Fields
@@ -760,7 +759,6 @@ def import_operator_network_code_task(self, filepath, user_id, task_id):
                                 country=country,
                                 MCC=mcc,
                                 MNC=mnc,
-                                networkName=network_name if network_name else None,
                                 networkType=network_type,
                                 isPrimary=is_primary,
                                 status=status,
